@@ -1,6 +1,10 @@
-# Result Packet Templates
+# Result Packet Templates (grok-senpai)
 
-Workers must end with a Result Packet. Formats differ slightly by agent.
+Workers must end with a Result Packet. Formats differ slightly by agent. See **AGENTS.md** and the worker skills.
+
+## Recommended next actions (shared)
+
+`merge` · `needs_review` · `iterate` · `discard` · `escalate_to_human`
 
 ## Codex (structured text)
 
@@ -23,7 +27,7 @@ Confidence
 Open Questions / Risks
 ...
 Recommended Next Action
-merge | needs-review | iterate | discard | escalate-to-human
+merge | needs_review | iterate | discard | escalate_to_human
 ```
 
 ## Claude (JSON preferred)
@@ -44,6 +48,9 @@ merge | needs-review | iterate | discard | escalate-to-human
 }
 ```
 
+(`confidence` is an integer 1–5.)
+
 ## Orchestrator rules
+
 - Treat every Result Packet as a **proposal**.
 - Do not merge until mandatory gates pass (see `AGENTS.md`).

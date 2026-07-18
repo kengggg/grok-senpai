@@ -1,4 +1,4 @@
-# Orchestration State
+# Orchestration State (grok-senpai)
 
 Track active multi-agent work here. One row per task / worktree.
 
@@ -7,8 +7,10 @@ Track active multi-agent work here. One row per task / worktree.
 |         |       |               |        |        |               |       |
 
 ## Status values
+
 `pending` · `in_progress` · `success` · `partial` · `failed` · `merged` · `discarded`
 
 ## Protocol
-- Record every active worktree when launching a worker.
+
+- Record every active worktree when launching a worker (see **AGENTS.md**).
 - After merge or discard, clear the row (or mark completed) and remove the worktree.

@@ -1,8 +1,10 @@
 # grok-senpai
 
-**Multi-agent orchestration pack for Grok Build** — run Claude Code and Codex CLI as specialized workers under a single Grok orchestrator, with isolated worktrees, Task Packets, Result Packets, and hard merge gates.
+**Multi-agent orchestration template for [Grok Build](https://x.ai/)** — orchestrate **Claude Code** and **Codex CLI** as specialized workers with isolated worktrees, Task Packets, Result Packets, and hard merge gates.
 
-## Why
+GitHub: [kengggg/grok-senpai](https://github.com/kengggg/grok-senpai)
+
+## Why grok-senpai?
 
 Solo agents blur planning, coding, and review. **grok-senpai** makes the workflow explicit:
 
@@ -13,7 +15,7 @@ Solo agents blur planning, coding, and review. **grok-senpai** makes the workflo
 | Scoped implementation / mechanical review | Codex CLI (`codex-worker`) |
 | Simple independent slices | Grok subagents |
 
-Every non-trivial change is a **proposal** until verification, cross-model review, and human approval.
+Every non-trivial change is a **proposal** until verification, cross-model review, and human approval. See **[AGENTS.md](./AGENTS.md)** for the full playbook.
 
 ## Prerequisites
 
@@ -28,27 +30,28 @@ Every non-trivial change is a **proposal** until verification, cross-model revie
 grok-senpai/
 ├── .grok/
 │   ├── skills/
-│   │   ├── claude-worker/SKILL.md
-│   │   └── codex-worker/SKILL.md
+│   │   ├── claude-worker/
+│   │   │   └── SKILL.md
+│   │   └── codex-worker/
+│   │       └── SKILL.md
 │   └── orchestration/
 │       ├── state.md
 │       ├── TASK_PACKET.template.md
 │       └── RESULT_PACKET.template.md
 ├── examples/
-│   └── clamp/                 # worked example (optional)
-├── AGENTS.md                  # playbook (project instructions)
+│   └── clamp/                 # optional worked example
+├── AGENTS.md                  # playbook (project instructions for Grok)
 ├── README.md
 └── LICENSE
 ```
 
 ## Quick start
 
-### Use as a new project
+### Clone as a template
 
 ```bash
-git clone <this-repo> my-project
-cd my-project
-# rename remote, start building — keep AGENTS.md and .grok/
+git clone https://github.com/kengggg/grok-senpai.git
+cd grok-senpai
 ```
 
 ### Drop into an existing project
@@ -59,14 +62,14 @@ cp -R path/to/grok-senpai/.grok .
 cp path/to/grok-senpai/AGENTS.md .   # or merge into existing AGENTS.md
 ```
 
-Ensure the project is a git repo, then:
+Ensure the project is a **git** repository, then:
 
-1. Read **AGENTS.md** (routing + gates).
+1. Read **AGENTS.md** (routing table + mandatory gates).
 2. Create a worktree: `orch/<short-task>-<agent>`.
 3. Fill a **Task Packet** from `.grok/orchestration/TASK_PACKET.template.md`.
-4. Invoke **codex-worker** or **claude-worker** inside the worktree.
-5. Collect the **Result Packet**, run independent review, update `state.md`.
-6. Merge only after all mandatory gates pass.
+4. Invoke **codex-worker** or **claude-worker** inside the worktree (see skills).
+5. Collect the **Result Packet**, run independent review (opposite model), update `state.md`.
+6. Merge only after all mandatory gates pass (including human approval).
 
 ## Orchestration loop
 
@@ -81,9 +84,11 @@ Plan (Grok)
   → Merge + worktree cleanup
 ```
 
+This loop matches the playbook in **AGENTS.md** and the invocation contracts in the worker skills.
+
 ## Example
 
-`examples/clamp/` is a small pure-function walkthrough (implement → review → polish) that was used to validate this pack. Run:
+`examples/clamp/` is a small pure-function walkthrough (implement → review → polish) used to validate grok-senpai. It is optional teaching material, not required runtime.
 
 ```bash
 cd examples/clamp

@@ -4,6 +4,13 @@
 
 Copy this pack into any project (or start from this repo) so Grok can orchestrate **Claude Code** and **Codex CLI** workers in isolated worktrees with explicit Task Packets, Result Packets, and merge gates.
 
+| Role | Who | Skill |
+|------|-----|--------|
+| Orchestrator | Grok Build | — |
+| Deep reasoning / architecture / high-stakes review | Claude Code | `.grok/skills/claude-worker/` |
+| Scoped implementation / mechanical review | Codex CLI | `.grok/skills/codex-worker/` |
+| Simple independent slices | Grok subagents | builtin |
+
 Application code lives in *your* project. This template provides the playbook, worker skills, and orchestration state — plus an optional worked example under `examples/`.
 
 ---
@@ -45,10 +52,11 @@ Always use the standard Task Packet when launching workers and require a Result 
 
 - Templates: `.grok/orchestration/TASK_PACKET.template.md`, `.grok/orchestration/RESULT_PACKET.template.md`
 - Worker skills: `.grok/skills/claude-worker/`, `.grok/skills/codex-worker/`
+- Active tracking: `.grok/orchestration/state.md`
 
 ### How to use this template
 1. Ensure the repo is a git repository (worktrees require git).
-2. Keep `.grok/skills/` and `AGENTS.md` at the project root (or merge into an existing project).
+2. Keep `.grok/skills/`, `.grok/orchestration/`, and `AGENTS.md` at the project root (or merge into an existing project).
 3. For each non-trivial task: create a worktree → fill a Task Packet → invoke the matching worker skill → record state → independent review → human merge approval.
 4. Reset `.grok/orchestration/state.md` between major efforts if desired.
 

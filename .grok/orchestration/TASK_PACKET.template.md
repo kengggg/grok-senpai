@@ -1,6 +1,6 @@
-# Task Packet Template
+# Task Packet Template (grok-senpai)
 
-Copy this file (or paste into the worker prompt) when launching a claude-worker or codex-worker.
+Copy this file (or paste into the worker prompt) when launching a **claude-worker** or **codex-worker**. See **AGENTS.md** for gates and routing.
 
 ```yaml
 task_id: <short-id>                 # e.g. feat-auth-001
@@ -8,7 +8,7 @@ agent: codex | claude
 mode: implementation | independent_review
 worktree_path: <absolute path>
 branch: orch/<short-task>-<agent>
-created_by: grok-orchestrator
+created_by: grok-senpai-orchestrator
 parent_task_id: <optional>
 
 goal: |
@@ -32,8 +32,10 @@ constraints:
   - Stay strictly inside the worktree
   - Prefer minimal, high-quality changes
   - Do not expand scope
-  - Treat output as a proposal; orchestrator reviews independently
+  - Treat output as a proposal; grok-senpai orchestrator reviews independently
 
 deliverables:
   - <files / Result Packet>
 ```
+
+After launch, record the task in `.grok/orchestration/state.md`.
