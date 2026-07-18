@@ -50,47 +50,61 @@ grok-senpai/
 
 ## Quick start
 
-### Clone as a template
+### One-liner install (easiest)
+
+From **inside your project** directory:
+
+```bash
+curl -sL https://raw.githubusercontent.com/kengggg/grok-senpai/main/install.sh | bash
+```
+
+Or pass a target path:
+
+```bash
+curl -sL https://raw.githubusercontent.com/kengggg/grok-senpai/main/install.sh | bash -s -- /path/to/your-app
+```
+
+Pin a branch or tag:
+
+```bash
+GROK_SENPAI_REF=main curl -sL https://raw.githubusercontent.com/kengggg/grok-senpai/main/install.sh | bash
+```
+
+### Local clone + install.sh
 
 ```bash
 git clone https://github.com/kengggg/grok-senpai.git
-cd grok-senpai
-```
-
-### Install into an existing project (recommended)
-
-From a grok-senpai checkout:
-
-```bash
-# inside your app repo
-/path/to/grok-senpai/install.sh .
-
-# or pass the target path
 /path/to/grok-senpai/install.sh /path/to/your-app
+# or, from inside your app:
+/path/to/grok-senpai/install.sh .
 ```
 
-One-liner after cloning:
-
-```bash
-git clone https://github.com/kengggg/grok-senpai.git /tmp/grok-senpai
-/tmp/grok-senpai/install.sh /path/to/your-app
-```
-
-What the script does:
-
-- Copies/updates `.grok/skills` and packet templates
-- Preserves an existing `.grok/orchestration/state.md`
-- Merges the Multi-Agent Orchestration Playbook into `AGENTS.md` (or creates it)
-- Safe to re-run (idempotent HTML markers)
-
-Manual copy is possible but not recommended:
+### Manual copy (fallback)
 
 ```bash
 cp -R path/to/grok-senpai/.grok .
-# then merge AGENTS.md by hand — prefer install.sh
+# Merge the playbook into AGENTS.md yourself — prefer install.sh
 ```
 
-Ensure the project is a **git** repository, then open **Grok Build** in that directory.
+### What gets installed
+
+- `.grok/skills/` — `claude-worker`, `codex-worker` (refreshed on re-run)
+- `.grok/orchestration/` — packet templates; **existing `state.md` is kept**
+- `AGENTS.md` — Multi-Agent Orchestration Playbook merged or created (idempotent markers)
+
+### After install — just talk to Grok
+
+You do **not** run worktrees, Task Packets, or workers yourself.
+
+1. Open **Grok Build** in the project (git repo recommended).
+2. Describe the goal in plain language (optionally: “follow the grok-senpai playbook”).
+3. **Grok** reads `AGENTS.md`, routes to Claude/Codex, verifies, and reviews.
+4. **You** only approve or reject the final diff when asked.
+
+```text
+Implement rate limiting on the login endpoint and add tests.
+Follow the grok-senpai playbook.
+```
 
 ### Who does what
 
@@ -101,15 +115,6 @@ Ensure the project is a **git** repository, then open **Grok Build** in that dir
 | That’s it — no need to micromanage steps | Runs verification, opposite-model review, updates `state.md`, merges after your approval |
 
 **You should not** invent worktree names, fill Task Packets, or pick Claude vs Codex yourself. **Grok does the job** you described, using this pack as its operating manual.
-
-### What you actually type
-
-```text
-Implement rate limiting on the login endpoint and add tests.
-Follow the grok-senpai playbook.
-```
-
-Grok then owns the full loop below (you only weigh in at human-approval gates).
 
 ## Orchestration loop (Grok runs this)
 

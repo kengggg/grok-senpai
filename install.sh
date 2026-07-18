@@ -1,20 +1,26 @@
 #!/usr/bin/env bash
-# install.sh — install grok-senpai into an existing project
+# install.sh — install grok-senpai into a project
 #
-# Usage:
+# Usage (local checkout):
 #   ./install.sh                 # install into current directory
 #   ./install.sh /path/to/app    # install into target project
 #
-# Safe to re-run (idempotent). Bash + coreutils only.
+# Usage (one-liner, no clone needed):
+#   curl -sL https://raw.githubusercontent.com/kengggg/grok-senpai/main/install.sh | bash
+#   curl -sL https://raw.githubusercontent.com/kengggg/grok-senpai/main/install.sh | bash -s -- /path/to/project
+#
+# Optional:
+#   GROK_SENPAI_REF=main   # branch or tag when downloading (default: main)
+#
+# Safe to re-run (idempotent). Needs bash, curl, tar, and common coreutils.
 
 set -euo pipefail
 
 MARKER_START="<!-- grok-senpai:playbook:start -->"
 MARKER_END="<!-- grok-senpai:playbook:end -->"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-SOURCE_GROK="${SCRIPT_DIR}/.grok"
-SOURCE_AGENTS="${SCRIPT_DIR}/AGENTS.md"
+REPO_SLUG="kengggg/grok-senpai"
+REF="${GROK_SENPAI_REF:-main}"
 
 TARGET_ARG="${1:-.}"
 if [[ ! -d "$TARGET_ARG" ]]; then
@@ -23,20 +29,81 @@ if [[ ! -d "$TARGET_ARG" ]]; then
 fi
 TARGET="$(cd "$TARGET_ARG" && pwd)"
 
-if [[ ! -d "$SOURCE_GROK" ]]; then
-  echo "error: cannot find .grok next to install.sh (${SOURCE_GROK})" >&2
-  echo "       run this script from a grok-senpai checkout." >&2
-  exit 1
-fi
-if [[ ! -f "$SOURCE_AGENTS" ]]; then
-  echo "error: cannot find AGENTS.md next to install.sh (${SOURCE_AGENTS})" >&2
-  exit 1
-fi
-
 SUMMARY=()
 summary() { SUMMARY+=("$*"); }
 
-# Playbook body: from "## Multi-Agent Orchestration Playbook" to EOF
+DOWNLOAD_DIR=""
+TEMP_FILES=()
+
+cleanup() {
+  local f
+  for f in "${TEMP_FILES[@]:-}"; do
+    rm -f "$f" 2>/dev/null || true
+  done
+  if [[ -n "${DOWNLOAD_DIR}" && -d "${DOWNLOAD_DIR}" ]]; then
+    rm -rf "${DOWNLOAD_DIR}"
+  fi
+}
+trap cleanup EXIT
+
+mktemp_tracked() {
+  local t
+  t="$(mktemp)"
+  TEMP_FILES+=("$t")
+  printf '%s\n' "$t"
+}
+
+# Set SOURCE_ROOT to a directory that contains .grok/ and AGENTS.md
+resolve_source() {
+  local script_dir candidate
+
+  # 1) Local execution with pack beside the script
+  if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if [[ -d "${script_dir}/.grok" && -f "${script_dir}/AGENTS.md" ]]; then
+      SOURCE_ROOT="$script_dir"
+      summary "Using local pack at ${SOURCE_ROOT}"
+      return 0
+    fi
+  fi
+
+  # 2) Remote: download pack tarball (curl one-liner / missing local assets)
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "error: curl is required to download grok-senpai" >&2
+    exit 1
+  fi
+  if ! command -v tar >/dev/null 2>&1; then
+    echo "error: tar is required to unpack grok-senpai" >&2
+    exit 1
+  fi
+
+  DOWNLOAD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/grok-senpai.XXXXXX")"
+  echo "Downloading grok-senpai@${REF} …"
+
+  if ! curl -fsSL "https://github.com/${REPO_SLUG}/archive/refs/heads/${REF}.tar.gz" \
+      | tar -xz -C "$DOWNLOAD_DIR" 2>/dev/null; then
+    if ! curl -fsSL "https://github.com/${REPO_SLUG}/archive/refs/tags/${REF}.tar.gz" \
+        | tar -xz -C "$DOWNLOAD_DIR"; then
+      echo "error: failed to download pack for ref '${REF}'" >&2
+      exit 1
+    fi
+  fi
+
+  candidate="$(find "$DOWNLOAD_DIR" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+  if [[ -z "$candidate" || ! -d "${candidate}/.grok" || ! -f "${candidate}/AGENTS.md" ]]; then
+    echo "error: downloaded archive missing .grok/ or AGENTS.md" >&2
+    exit 1
+  fi
+
+  SOURCE_ROOT="$candidate"
+  summary "Downloaded pack ${REPO_SLUG}@${REF}"
+}
+
+SOURCE_ROOT=""
+resolve_source
+SOURCE_GROK="${SOURCE_ROOT}/.grok"
+SOURCE_AGENTS="${SOURCE_ROOT}/AGENTS.md"
+
 extract_playbook() {
   awk '
     /^## Multi-Agent Orchestration Playbook/ { found = 1 }
@@ -84,16 +151,11 @@ EOF
   fi
 }
 
-# Replace lines between markers (inclusive) with new block; print rest unchanged.
 replace_marked_block() {
-  local src="$1"
-  local block_file="$2"
-  local out="$3"
+  local src="$1" block_file="$2" out="$3"
   awk -v start="$MARKER_START" -v end="$MARKER_END" -v bf="$block_file" '
     BEGIN {
-      while ((getline line < bf) > 0) {
-        blk = blk line ORS
-      }
+      while ((getline line < bf) > 0) blk = blk line ORS
       close(bf)
     }
     $0 == start { print blk; skip = 1; next }
@@ -103,24 +165,18 @@ replace_marked_block() {
   ' "$src" > "$out"
 }
 
-# Drop from playbook heading through EOF (unmarked prior install).
 strip_unmarked_playbook() {
-  local src="$1"
-  local out="$2"
-  awk '/^## Multi-Agent Orchestration Playbook/ { exit } { print }' "$src" > "$out"
+  awk '/^## Multi-Agent Orchestration Playbook/ { exit } { print }' "$1" > "$2"
 }
 
 merge_agents() {
   local agents="${TARGET}/AGENTS.md"
   local claude="${TARGET}/CLAUDE.md"
-  local block_file
-  local tmp rest
+  local block_file tmp rest
 
-  block_file="$(mktemp)"
-  tmp="$(mktemp)"
-  rest="$(mktemp)"
-  # shellcheck disable=SC2064
-  trap 'rm -f "$block_file" "$tmp" "$rest"' RETURN
+  block_file="$(mktemp_tracked)"
+  tmp="$(mktemp_tracked)"
+  rest="$(mktemp_tracked)"
 
   build_playbook_block > "$block_file"
 
@@ -136,10 +192,7 @@ merge_agents() {
       strip_unmarked_playbook "$agents" "$rest"
       {
         cat "$rest"
-        # Ensure separation if file had content before the heading
-        if [[ -s "$rest" ]] && [[ -n "$(tail -c1 "$rest" 2>/dev/null || true)" ]]; then
-          printf '\n'
-        fi
+        if [[ -s "$rest" ]]; then printf '\n'; fi
         cat "$block_file"
       } > "$tmp"
       mv "$tmp" "$agents"
@@ -147,7 +200,7 @@ merge_agents() {
       return
     fi
 
-    # Exists, no playbook yet: prepend marked block
+    # Exists, no playbook: prepend (near top)
     {
       cat "$block_file"
       printf '\n'
@@ -158,7 +211,6 @@ merge_agents() {
     return
   fi
 
-  # No AGENTS.md
   if [[ -f "$claude" ]]; then
     {
       cat <<'EOF'
@@ -185,7 +237,6 @@ EOF
 }
 
 echo "grok-senpai install"
-echo "  source: $SCRIPT_DIR"
 echo "  target: $TARGET"
 echo
 
@@ -198,5 +249,7 @@ for line in "${SUMMARY[@]}"; do
   echo "  • $line"
 done
 echo
-echo "Next: open Grok Build in the target project and describe your goal."
-echo "      You approve final diffs; Grok runs the playbook."
+echo "Next steps:"
+echo "  1. Open Grok Build in: $TARGET"
+echo "  2. Describe your goal in plain language."
+echo "  3. Grok follows the playbook; you only approve final diffs."
