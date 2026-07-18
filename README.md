@@ -42,6 +42,7 @@ grok-senpai/
 │       └── RESULT_PACKET.template.md
 ├── examples/
 │   └── clamp/                 # optional worked example
+├── install.sh                 # install into another project
 ├── AGENTS.md                  # playbook (project instructions for Grok)
 ├── README.md
 └── LICENSE
@@ -56,12 +57,37 @@ git clone https://github.com/kengggg/grok-senpai.git
 cd grok-senpai
 ```
 
-### Drop into an existing project
+### Install into an existing project (recommended)
+
+From a grok-senpai checkout:
 
 ```bash
-# from your app repo
+# inside your app repo
+/path/to/grok-senpai/install.sh .
+
+# or pass the target path
+/path/to/grok-senpai/install.sh /path/to/your-app
+```
+
+One-liner after cloning:
+
+```bash
+git clone https://github.com/kengggg/grok-senpai.git /tmp/grok-senpai
+/tmp/grok-senpai/install.sh /path/to/your-app
+```
+
+What the script does:
+
+- Copies/updates `.grok/skills` and packet templates
+- Preserves an existing `.grok/orchestration/state.md`
+- Merges the Multi-Agent Orchestration Playbook into `AGENTS.md` (or creates it)
+- Safe to re-run (idempotent HTML markers)
+
+Manual copy is possible but not recommended:
+
+```bash
 cp -R path/to/grok-senpai/.grok .
-cp path/to/grok-senpai/AGENTS.md .   # or merge into existing AGENTS.md
+# then merge AGENTS.md by hand — prefer install.sh
 ```
 
 Ensure the project is a **git** repository, then open **Grok Build** in that directory.
