@@ -1,0 +1,17 @@
+# Example / documented defaults for grok-senpai workers.
+# Copy to worker-config.toml or let install.sh create it.
+# See AGENTS.md → "Worker models & thinking levels".
+
+[claude]
+model = "opus"
+effort = "max"
+
+[codex]
+model = "gpt-5.6-sol"
+effort = "ultra"
+
+[policy]
+allow_override = true
+enforce_floors = true
+min_effort_claude = "high"
+min_effort_codex = "high"

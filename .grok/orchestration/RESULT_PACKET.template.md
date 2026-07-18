@@ -15,6 +15,8 @@ Status: success | partial | failed
 Agent: codex
 Worktree Path: ...
 Branch: ...
+Worker Model: gpt-5.6-sol
+Worker Effort: ultra
 Summary
 <2-5 sentences>
 Files Changed
@@ -44,7 +46,9 @@ merge | needs_review | iterate | discard | escalate_to_human
   "confidence": 1,
   "open_questions": [],
   "risks": [],
-  "recommended_next_action": "merge | needs_review | iterate | escalate_to_human | discard"
+  "recommended_next_action": "merge | needs_review | iterate | escalate_to_human | discard",
+  "worker_model": "opus",
+  "worker_effort": "max"
 }
 ```
 

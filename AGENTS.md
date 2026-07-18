@@ -52,7 +52,38 @@ Always use the standard Task Packet when launching workers and require a Result 
 
 - Templates: `.grok/orchestration/TASK_PACKET.template.md`, `.grok/orchestration/RESULT_PACKET.template.md`
 - Worker skills: `.grok/skills/claude-worker/`, `.grok/skills/codex-worker/`
+- Worker defaults: `.grok/orchestration/worker-config.toml`
 - Active tracking: `.grok/orchestration/state.md`
+
+### Worker models & thinking levels
+
+**Hard defaults** (use unless overridden):
+
+| Worker | Model | Effort |
+|--------|-------|--------|
+| Claude (`claude-worker`) | `opus` | `max` |
+| Codex (`codex-worker`) | `gpt-5.6-sol` (Sol) | `ultra` |
+
+Configured in `.grok/orchestration/worker-config.toml`. Skills must pass these flags **explicitly** on every invoke (do not rely on the user's global CLI defaults).
+
+**Grok may override** via Task Packet when `[policy].allow_override = true`:
+
+```yaml
+worker_model: opus            # or gpt-5.6-sol, etc.
+worker_effort: high           # claude: low|medium|high|xhigh|max
+                              # codex:  low|medium|high|xhigh|max|ultra
+```
+
+**Effort routing (when Grok delegates level):**
+
+| Task shape | Claude effort | Codex effort |
+|------------|---------------|--------------|
+| Architecture, security, multi-file, ambiguous | `max` | `ultra` or `max` |
+| Independent code review | `max` | `max` or `ultra` |
+| Normal feature / solid implementation | `high`–`max` | `high`–`ultra` |
+| Tiny mechanical edit, single file, clear tests | `high` (floor) | `high` (floor) |
+
+If `policy.enforce_floors` is true (default), never go below `min_effort_claude` / `min_effort_codex` (default `high`). Prefer staying at **max/ultra** when unsure.
 
 ### Roles
 - **Human:** States goals in plain language; approves or rejects final diffs. Does **not** manually drive worktrees, packets, or worker selection.

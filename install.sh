@@ -133,6 +133,27 @@ install_grok() {
   done
   summary "Updated .grok/orchestration packet templates"
 
+  # Always refresh documented example config
+  if [[ -f "${SOURCE_GROK}/orchestration/worker-config.example.toml" ]]; then
+    cp "${SOURCE_GROK}/orchestration/worker-config.example.toml" \
+      "${dest}/orchestration/worker-config.example.toml"
+    summary "Updated .grok/orchestration/worker-config.example.toml"
+  fi
+
+  # Project worker-config.toml: create if missing; never overwrite (project customizations)
+  if [[ -f "${dest}/orchestration/worker-config.toml" ]]; then
+    summary "Kept existing .grok/orchestration/worker-config.toml (edit to change defaults)"
+  else
+    if [[ -f "${SOURCE_GROK}/orchestration/worker-config.toml" ]]; then
+      cp "${SOURCE_GROK}/orchestration/worker-config.toml" \
+        "${dest}/orchestration/worker-config.toml"
+    elif [[ -f "${SOURCE_GROK}/orchestration/worker-config.example.toml" ]]; then
+      cp "${SOURCE_GROK}/orchestration/worker-config.example.toml" \
+        "${dest}/orchestration/worker-config.toml"
+    fi
+    summary "Created .grok/orchestration/worker-config.toml (Opus/max, Sol/ultra)"
+  fi
+
   if [[ -f "${dest}/orchestration/state.md" ]]; then
     summary "Kept existing .grok/orchestration/state.md"
   else

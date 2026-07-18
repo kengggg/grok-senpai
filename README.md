@@ -38,6 +38,8 @@ grok-senpai/
 │   │       └── SKILL.md
 │   └── orchestration/
 │       ├── state.md
+│       ├── worker-config.toml           # model + effort defaults (Opus/max, Sol/ultra)
+│       ├── worker-config.example.toml
 │       ├── TASK_PACKET.template.md
 │       └── RESULT_PACKET.template.md
 ├── examples/
@@ -88,9 +90,34 @@ cp -R path/to/grok-senpai/.grok .
 
 ### What gets installed
 
-- `.grok/skills/` — `claude-worker`, `codex-worker` (refreshed on re-run)
-- `.grok/orchestration/` — packet templates; **existing `state.md` is kept**
+- `.grok/skills/` — `claude-worker`, `codex-worker` (**always refreshed** on re-run)
+- `.grok/orchestration/` — packet templates + `worker-config.example.toml` (refreshed)
+- `worker-config.toml` — created once with defaults; **not overwritten** on re-run
+- `state.md` — created once; **kept** on re-run
 - `AGENTS.md` — Multi-Agent Orchestration Playbook merged or created (idempotent markers)
+
+### Worker defaults (thinking level)
+
+| Worker | Model | Effort |
+|--------|-------|--------|
+| Claude | **Opus** (`opus`) | **`max`** |
+| Codex | **Sol** (`gpt-5.6-sol`) | **`ultra`** |
+
+Grok may lower effort per Task Packet (`worker_effort`) when the playbook allows; floors default to `high`. Edit `.grok/orchestration/worker-config.toml` to change project defaults.
+
+### Upgrade an existing project
+
+Re-run the installer to pull new skills + playbook (keeps your `state.md` and `worker-config.toml`):
+
+```bash
+curl -sL https://raw.githubusercontent.com/kengggg/grok-senpai/main/install.sh | bash
+```
+
+To reset worker defaults to stock Opus/max + Sol/ultra:
+
+```bash
+cp .grok/orchestration/worker-config.example.toml .grok/orchestration/worker-config.toml
+```
 
 ### After install — just talk to Grok
 
