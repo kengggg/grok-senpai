@@ -54,11 +54,18 @@ Always use the standard Task Packet when launching workers and require a Result 
 - Worker skills: `.grok/skills/claude-worker/`, `.grok/skills/codex-worker/`
 - Active tracking: `.grok/orchestration/state.md`
 
-### How to use this template
-1. Ensure the repo is a git repository (worktrees require git).
-2. Keep `.grok/skills/`, `.grok/orchestration/`, and `AGENTS.md` at the project root (or merge into an existing project).
-3. For each non-trivial task: create a worktree → fill a Task Packet → invoke the matching worker skill → record state → independent review → human merge approval.
-4. Reset `.grok/orchestration/state.md` between major efforts if desired.
+### Roles
+- **Human:** States goals in plain language; approves or rejects final diffs. Does **not** manually drive worktrees, packets, or worker selection.
+- **Grok (orchestrator):** Owns the full loop below for every non-trivial task. This file is your operating manual.
+
+### How Grok runs a task
+1. Confirm the repo is git-backed (worktrees require git).
+2. Create an isolated worktree (`orch/<short-task>-<agent>`).
+3. Write a complete Task Packet; launch the matching worker skill.
+4. Collect the Result Packet; run verification inside the worktree.
+5. Run independent review with a different model when required.
+6. Present the final diff to the human; merge only after approval; clean up the worktree.
+7. Keep `.grok/orchestration/state.md` accurate; reset between major efforts if useful.
 
 ### Example
 See `examples/clamp/` for a complete walkthrough of implementation → review → polish using this playbook.

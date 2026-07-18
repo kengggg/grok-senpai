@@ -62,29 +62,42 @@ cp -R path/to/grok-senpai/.grok .
 cp path/to/grok-senpai/AGENTS.md .   # or merge into existing AGENTS.md
 ```
 
-Ensure the project is a **git** repository, then:
+Ensure the project is a **git** repository, then open **Grok Build** in that directory.
 
-1. Read **AGENTS.md** (routing table + mandatory gates).
-2. Create a worktree: `orch/<short-task>-<agent>`.
-3. Fill a **Task Packet** from `.grok/orchestration/TASK_PACKET.template.md`.
-4. Invoke **codex-worker** or **claude-worker** inside the worktree (see skills).
-5. Collect the **Result Packet**, run independent review (opposite model), update `state.md`.
-6. Merge only after all mandatory gates pass (including human approval).
+### Who does what
 
-## Orchestration loop
+| You (human) | Grok (orchestrator) |
+|-------------|---------------------|
+| Describe the goal in plain language | Reads **AGENTS.md** and follows the playbook |
+| Approve (or reject) final diffs when asked | Creates worktrees, Task Packets, launches workers |
+| That’s it — no need to micromanage steps | Runs verification, opposite-model review, updates `state.md`, merges after your approval |
 
-```
-Plan (Grok)
-  → Worktree (orch/<task>-<agent>)
-  → Task Packet
-  → Worker skill (Claude or Codex)
-  → Result Packet
-  → Independent review (opposite model)
-  → Human approval
-  → Merge + worktree cleanup
+**You should not** invent worktree names, fill Task Packets, or pick Claude vs Codex yourself. **Grok does the job** you described, using this pack as its operating manual.
+
+### What you actually type
+
+```text
+Implement rate limiting on the login endpoint and add tests.
+Follow the grok-senpai playbook.
 ```
 
-This loop matches the playbook in **AGENTS.md** and the invocation contracts in the worker skills.
+Grok then owns the full loop below (you only weigh in at human-approval gates).
+
+## Orchestration loop (Grok runs this)
+
+```
+You: state the goal
+  → Grok: Plan
+  → Grok: Worktree (orch/<task>-<agent>)
+  → Grok: Task Packet
+  → Grok: Worker skill (Claude or Codex)
+  → Grok: Result Packet + verification
+  → Grok: Independent review (opposite model)
+  → You: approve or reject the final diff
+  → Grok: Merge + worktree cleanup
+```
+
+The playbook in **AGENTS.md** and the worker skills are instructions **for Grok**, not a checklist for you.
 
 ## Example
 
