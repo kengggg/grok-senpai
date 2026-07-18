@@ -1,6 +1,6 @@
 # grok-senpai
 
-![grok-senpai cover — 70s ตาแป๋ว manga style](docs/cover.jpg)
+![grok-senpai cover — digital remaster of 70s ตาแป๋ว manga style](docs/cover.jpg)
 
 **Multi-agent orchestration template for [Grok Build](https://x.ai/)** — orchestrate **Claude Code** and **Codex CLI** as specialized workers with isolated worktrees, Task Packets, Result Packets, and hard merge gates.
 
