@@ -23,6 +23,26 @@ class ClampTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             clamp(3, 5, 2)
 
+    def test_equal_bounds_returns_bound(self):
+        self.assertEqual(clamp(3, 4, 4), 4)  # value above collapsed bound
+        self.assertEqual(clamp(0, 4, 4), 4)  # value below collapsed bound
+        self.assertEqual(clamp(4, 4, 4), 4)  # value equal to collapsed bound
+
+    def test_negative_numbers(self):
+        self.assertEqual(clamp(-6, -5, -2), -5)
+        self.assertEqual(clamp(-1, -5, -2), -2)
+        self.assertEqual(clamp(-3, -5, -2), -3)
+
+    def test_floats(self):
+        self.assertEqual(clamp(1.25, 1.5, 2.5), 1.5)
+        self.assertEqual(clamp(2.75, 1.5, 2.5), 2.5)
+        self.assertEqual(clamp(2.25, 1.5, 2.5), 2.25)
+
+    def test_keyword_arguments(self):
+        self.assertEqual(clamp(3, min_value=2, max_value=5), 3)
+        self.assertEqual(clamp(1, min_value=2, max_value=5), 2)
+        self.assertEqual(clamp(9, min_value=2, max_value=5), 5)
+
 
 if __name__ == "__main__":
     unittest.main()
