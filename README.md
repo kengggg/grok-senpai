@@ -41,7 +41,9 @@ grok-senpai/
 │       ├── worker-config.toml           # model + effort defaults (Opus/max, Sol/ultra)
 │       ├── worker-config.example.toml
 │       ├── TASK_PACKET.template.md
-│       └── RESULT_PACKET.template.md
+│       ├── RESULT_PACKET.template.md
+│       ├── REVIEW_PACKET.template.md    # implementer → reviewer handoff
+│       └── reviews/                     # written Review Packets per task
 ├── examples/
 │   └── clamp/                 # optional worked example
 ├── install.sh                 # install into another project
@@ -91,10 +93,12 @@ cp -R path/to/grok-senpai/.grok .
 ### What gets installed
 
 - `.grok/skills/` — `claude-worker`, `codex-worker` (**always refreshed** on re-run)
-- `.grok/orchestration/` — packet templates + `worker-config.example.toml` (refreshed)
+- `.grok/orchestration/` — Task/Result/**Review** packet templates + `worker-config.example.toml` (refreshed)
 - `worker-config.toml` — created once with defaults; **not overwritten** on re-run
 - `state.md` — created once; **kept** on re-run
 - `AGENTS.md` — Multi-Agent Orchestration Playbook merged or created (idempotent markers)
+
+**Handoff flow:** Task Packet → implementer Result Packet → **Review Packet** (summary + diff) → opposite-model review → human approval.
 
 ### Worker defaults (thinking level)
 
@@ -148,10 +152,11 @@ Follow the grok-senpai playbook.
 ```
 You: state the goal
   → Grok: Plan
-  → Grok: Worktree (orch/<task>-<agent>)
+  → Grok: Worktree (orch/<task>-<agent>) — mandatory isolation
   → Grok: Task Packet
   → Grok: Worker skill (Claude or Codex)
   → Grok: Result Packet + verification
+  → Grok: Review Packet (summary + diff handoff)
   → Grok: Independent review (opposite model)
   → You: approve or reject the final diff
   → Grok: Merge + worktree cleanup

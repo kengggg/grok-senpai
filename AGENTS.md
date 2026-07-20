@@ -35,22 +35,34 @@ Application code lives in *your* project. This template provides the playbook, w
 
 ### Mandatory Gates (before any merge)
 1. Complete Task Packet
-2. Valid Result Packet returned
+2. Valid Result Packet returned from the implementer
 3. Verification commands pass inside the worktree
-4. Independent review by a different model
-5. Human approval of the final diff
+4. **Review Packet** written (summary + diff handoff) for non-trivial tasks
+5. Independent review by a different model, using the Review Packet
+6. Human approval of the final diff
 
-### Worktree Protocol
-- Prefer Grok-native worktrees (`grok -w` or `grok --worktree=...`)
+### Worktree Protocol (mandatory isolation)
+- **Non-trivial and all parallel work MUST run in an isolated worktree.** Do not implement multi-file or parallel agent work on the primary checkout.
+- Prefer Grok-native worktrees (`grok -w` or `grok --worktree=...`); `git worktree add` is acceptable if Grok-native is unavailable.
 - Naming convention: `orch/<short-task>-<agent>`
-- One agent per worktree
-- Record every active worktree in `.grok/orchestration/state.md`
-- After merge or discard → run `grok worktree rm` / `gc` (or `git worktree remove`)
+- **One agent per worktree.** Never point two workers at the same worktree.
+- Before launching a worker, confirm `Worktree Path` is a linked worktree (not the main checkout) unless the human explicitly approved in-place work for a trivial change.
+- Record every active worktree in `.grok/orchestration/state.md` **before** the worker starts.
+- After merge or discard → remove the worktree (`grok worktree rm` / `git worktree remove` / `gc`).
+- **Refuse** to start parallel Claude/Codex jobs that would share a dirty tree.
 
-### Task Packet & Result Packet
+### Task Packet, Result Packet & Review Packet
 Always use the standard Task Packet when launching workers and require a Result Packet in return.
 
-- Templates: `.grok/orchestration/TASK_PACKET.template.md`, `.grok/orchestration/RESULT_PACKET.template.md`
+After a successful **implementation** Result Packet, produce a **Review Packet** before launching the reviewer:
+
+- Path: `.grok/orchestration/reviews/<task_id>.md` (in the worktree or main tracker—prefer worktree, copy path into state.md)
+- Template: `.grok/orchestration/REVIEW_PACKET.template.md`
+- Contents: intent, what changed, diff scope (`git diff --stat` / key paths), verification table, risks, reviewer focus checklist
+
+The reviewer must receive: **Task Packet + Review Packet + read-only worktree/diff**. Do not ask a reviewer to “just look at the branch” without a Review Packet.
+
+- Templates: `.grok/orchestration/TASK_PACKET.template.md`, `.grok/orchestration/RESULT_PACKET.template.md`, `.grok/orchestration/REVIEW_PACKET.template.md`
 - Worker skills: `.grok/skills/claude-worker/`, `.grok/skills/codex-worker/`
 - Worker defaults: `.grok/orchestration/worker-config.toml`
 - Active tracking: `.grok/orchestration/state.md`
@@ -91,12 +103,13 @@ If `policy.enforce_floors` is true (default), never go below `min_effort_claude`
 
 ### How Grok runs a task
 1. Confirm the repo is git-backed (worktrees require git).
-2. Create an isolated worktree (`orch/<short-task>-<agent>`).
-3. Write a complete Task Packet; launch the matching worker skill.
-4. Collect the Result Packet; run verification inside the worktree.
-5. Run independent review with a different model when required.
-6. Present the final diff to the human; merge only after approval; clean up the worktree.
-7. Keep `.grok/orchestration/state.md` accurate; reset between major efforts if useful.
+2. Create an isolated worktree (`orch/<short-task>-<agent>`); record it in `state.md`.
+3. Write a complete Task Packet; launch the matching worker skill **only inside that worktree**.
+4. Collect the Result Packet; confirm verification passed inside the worktree.
+5. Write a **Review Packet** (template + diff summary) for non-trivial tasks.
+6. Launch independent review with a **different model** in a dedicated review setup (read-only; same worktree OK if read-only, or a fresh worktree checkout of the branch). Pass Task Packet + Review Packet + diff.
+7. Present the final diff (and review findings) to the human; merge only after approval; clean up the worktree.
+8. Keep `.grok/orchestration/state.md` accurate; reset between major efforts if useful.
 
 ### Example
 See `examples/clamp/` for a complete walkthrough of implementation → review → polish using this playbook.

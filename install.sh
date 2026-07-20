@@ -126,12 +126,17 @@ install_grok() {
     summary "Updated .grok/skills/ (claude-worker, codex-worker)"
   fi
 
-  for f in TASK_PACKET.template.md RESULT_PACKET.template.md; do
+  for f in TASK_PACKET.template.md RESULT_PACKET.template.md REVIEW_PACKET.template.md; do
     if [[ -f "${SOURCE_GROK}/orchestration/${f}" ]]; then
       cp "${SOURCE_GROK}/orchestration/${f}" "${dest}/orchestration/${f}"
     fi
   done
-  summary "Updated .grok/orchestration packet templates"
+  # Ensure reviews directory exists (for Review Packets)
+  mkdir -p "${dest}/orchestration/reviews"
+  if [[ ! -f "${dest}/orchestration/reviews/.gitkeep" ]]; then
+    : > "${dest}/orchestration/reviews/.gitkeep"
+  fi
+  summary "Updated .grok/orchestration packet templates (Task/Result/Review)"
 
   # Always refresh documented example config
   if [[ -f "${SOURCE_GROK}/orchestration/worker-config.example.toml" ]]; then

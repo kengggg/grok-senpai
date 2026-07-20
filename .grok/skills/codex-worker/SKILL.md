@@ -25,13 +25,20 @@ If `policy.enforce_floors` is true, do not set effort below `min_effort_codex` (
 
 ## Mandatory Process
 
-1. Confirm you are running inside the provided Worktree Path. If not, stop and report failure.
+1. Confirm you are running inside the provided Worktree Path (isolated worktree). If not, stop and report failure.
 2. Read AGENTS.md and any CLAUDE.md / project conventions first.
 3. Receive a complete Task Packet. If any required field is missing or the task is ambiguous / out of scope, return a failed Result Packet immediately.
-4. Resolve model/effort (config → Task Packet overrides → floors).
-5. Execute the task with **explicit** `-m` and `-c model_reasoning_effort=...`.
-6. Run the Verification Commands from the Task Packet.
-7. Produce a complete Result Packet (exactly the format below). Do not add extra commentary outside it.
+4. For **independent_review**: require a Review Packet path/content. If missing, return failed.
+5. Resolve model/effort (config → Task Packet overrides → floors).
+6. Execute the task with **explicit** `-m` and `-c model_reasoning_effort=...`.
+7. Run the Verification Commands from the Task Packet.
+8. **Implementation:** write Review Packet to `.grok/orchestration/reviews/<task_id>.md` (see `REVIEW_PACKET.template.md`) including `git status`, `git diff --stat`, verification table.
+9. Produce a complete Result Packet (exactly the format below). Do not add extra commentary outside it.
+
+## Worktree hard rules
+
+- One agent per worktree; never share a dirty tree with another worker.
+- Prefer refusing primary-checkout edits unless Task Packet sets `allow_primary_checkout: true`.
 
 ## Safety Defaults
 
@@ -55,7 +62,7 @@ cd "<Worktree Path>" && codex exec \
   -m "$MODEL" \
   -c model_reasoning_effort="$EFFORT" \
   --sandbox workspace-write \
-  "<full task description from Task Packet + acceptance criteria>"
+  "<Task Packet + acceptance criteria. After success: write Review Packet at .grok/orchestration/reviews/<task_id>.md per REVIEW_PACKET.template.md (intent, bullets, git diff --stat, verification, risks, reviewer checklist). Then emit Result Packet only.>"
 ```
 
 Review:
@@ -65,7 +72,7 @@ cd "<Worktree Path>" && codex exec \
   -m "$MODEL" \
   -c model_reasoning_effort="$EFFORT" \
   --sandbox read-only \
-  "Review the current changes against the Task Packet. Focus on correctness, edge cases, security, missing tests, and deviations from acceptance criteria. Output findings clearly."
+  "You are the independent reviewer. Use the Task Packet AND Review Packet. Focus on checklist items, correctness, edge cases, security, missing tests, scope deviations. Do not implement features. Output a Result Packet with findings."
 ```
 
 **Default one-liners (no overrides):**
@@ -115,4 +122,5 @@ Also see `.grok/orchestration/RESULT_PACKET.template.md`.
 
 - Never edit outside the assigned worktree.
 - Never omit `-m` / `model_reasoning_effort` (do not rely on global Codex config alone).
+- Implementation without a Review Packet for non-trivial work is incomplete.
 - Treat this as a proposal only. The grok-senpai orchestrator will perform independent review and enforce merge gates from AGENTS.md.

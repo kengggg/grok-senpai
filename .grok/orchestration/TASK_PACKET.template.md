@@ -6,10 +6,12 @@ Copy this file (or paste into the worker prompt) when launching a **claude-worke
 task_id: <short-id>                 # e.g. feat-auth-001
 agent: codex | claude
 mode: implementation | independent_review
-worktree_path: <absolute path>
+worktree_path: <absolute path>      # required isolated worktree for non-trivial work
 branch: orch/<short-task>-<agent>
 created_by: grok-senpai-orchestrator
 parent_task_id: <optional>
+allow_primary_checkout: false       # true only if human approved in-place trivial work
+review_packet_path: <optional>      # required for independent_review; e.g. .grok/orchestration/reviews/<task_id>.md
 
 # Worker model & effort (optional — defaults from worker-config.toml)
 # Defaults: claude → opus + max | codex → gpt-5.6-sol + ultra
