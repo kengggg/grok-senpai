@@ -48,9 +48,14 @@ grok-senpai/
 │   └── clamp/                 # optional worked example
 ├── install.sh                 # install into another project
 ├── AGENTS.md                  # playbook (project instructions for Grok)
+├── docs/
+│   ├── cover.jpg              # 16:9 README hero
+│   └── og-image.jpg           # 2:1 social / Open Graph preview
 ├── README.md
 └── LICENSE
 ```
+
+<!-- docs/cover.jpg = 16:9 README; docs/og-image.jpg = 2:1 social preview -->
 
 ## Quick start
 
