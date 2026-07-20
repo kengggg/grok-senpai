@@ -50,12 +50,14 @@ grok-senpai/
 ├── AGENTS.md                  # playbook (project instructions for Grok)
 ├── docs/
 │   ├── cover.jpg              # 16:9 README hero
-│   └── og-image.jpg           # 2:1 social / Open Graph preview
+│   └── og-image.jpg           # 1280×640 (2:1) social preview, safe margins
 ├── README.md
 └── LICENSE
 ```
 
-<!-- docs/cover.jpg = 16:9 README; docs/og-image.jpg = 2:1 social preview -->
+**Assets**
+- `docs/cover.jpg` — 16:9 README
+- `docs/og-image.jpg` — 1280×640 (2:1) Social preview with safe margins
 
 ## Quick start
 
