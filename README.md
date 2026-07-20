@@ -1,6 +1,6 @@
 # grok-senpai
 
-![grok-senpai cover — 1970s Leiji-style trio with Grok, Claude, and Codex badges](docs/cover.jpg)
+![grok-senpai cover — Leiji-style trio with official Claude, Grok, Codex chest medals](docs/cover.jpg)
 
 **Multi-agent orchestration template for [Grok Build](https://x.ai/)** — orchestrate **Claude Code** and **Codex CLI** as specialized workers with isolated worktrees, Task Packets, Result Packets, and hard merge gates.
 
