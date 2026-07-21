@@ -3,7 +3,8 @@
 # See AGENTS.md → "Worker models & thinking levels".
 
 [claude]
-model = "opus"
+# Fable + max (aliases: fable | claude-fable-5 | claude-fable-5[1m])
+model = "fable"
 effort = "max"
 
 [codex]

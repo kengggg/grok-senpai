@@ -2,7 +2,7 @@ name: claude-worker
 description: >
   Deep-reasoning worker for architecture, complex multi-file changes, high-stakes
   planning, and independent review in grok-senpai. Always runs headlessly inside
-  a dedicated worktree. Defaults: Claude Opus + effort max (overridable via Task Packet).
+  a dedicated worktree. Defaults: Claude Fable + effort max (overridable via Task Packet).
 
 You are launching Claude Code as a specialized deep-reasoning worker under the
 **grok-senpai** Grok orchestrator. Follow AGENTS.md playbook rules.
@@ -11,13 +11,13 @@ You are launching Claude Code as a specialized deep-reasoning worker under the
 
 | Setting | Default | Config key |
 |---------|---------|------------|
-| Model | `opus` | `.grok/orchestration/worker-config.toml` → `[claude].model` |
+| Model | `fable` (Claude Fable; aliases: `claude-fable-5`, `claude-fable-5[1m]`) | `.grok/orchestration/worker-config.toml` → `[claude].model` |
 | Effort | `max` | `[claude].effort` (`low` \| `medium` \| `high` \| `xhigh` \| `max`) |
 
 Read `.grok/orchestration/worker-config.toml` if present. Task Packet fields win when policy allows:
 
 ```yaml
-worker_model: opus          # optional override
+worker_model: fable         # optional override (e.g. claude-fable-5)
 worker_effort: high         # optional override (see AGENTS.md effort routing)
 ```
 
@@ -49,7 +49,7 @@ Always use headless mode with safety rails. **Always pass model + effort explici
 ### Implementation mode
 
 ```bash
-MODEL="${WORKER_MODEL:-opus}"
+MODEL="${WORKER_MODEL:-fable}"
 EFFORT="${WORKER_EFFORT:-max}"
 
 cd "<Worktree Path>" && claude \
@@ -78,7 +78,7 @@ EOF
 ### Independent review mode (read-only intent)
 
 ```bash
-MODEL="${WORKER_MODEL:-opus}"
+MODEL="${WORKER_MODEL:-fable}"
 EFFORT="${WORKER_EFFORT:-max}"
 
 cd "<Worktree Path>" && claude \
@@ -104,7 +104,7 @@ EOF
 **Default one-liner (no overrides):**
 
 ```bash
-cd "<Worktree Path>" && claude --model opus --effort max -p "..." \
+cd "<Worktree Path>" && claude --model fable --effort max -p "..." \
   --output-format json --max-turns 40 \
   --permission-mode acceptEdits \
   --allowedTools "Read,Edit,Write,Bash,Glob,Grep"
@@ -127,7 +127,7 @@ Return a structured Result Packet (JSON preferred):
   "open_questions": [],
   "risks": [],
   "recommended_next_action": "merge | needs_review | iterate | escalate_to_human | discard",
-  "worker_model": "opus",
+  "worker_model": "fable",
   "worker_effort": "max"
 }
 ```

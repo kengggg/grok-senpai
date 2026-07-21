@@ -47,7 +47,7 @@ merge | needs_review | iterate | discard | escalate_to_human
   "open_questions": [],
   "risks": [],
   "recommended_next_action": "merge | needs_review | iterate | escalate_to_human | discard",
-  "worker_model": "opus",
+  "worker_model": "fable",
   "worker_effort": "max"
 }
 ```

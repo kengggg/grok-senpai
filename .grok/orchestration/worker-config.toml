@@ -6,8 +6,9 @@
 # Grok may override model/effort per Task Packet when [policy].allow_override = true.
 
 [claude]
-# Claude Code model alias or full id (default: Opus)
-model = "opus"
+# Claude Code model alias or full id (default: Fable)
+# Aliases: fable | claude-fable-5 | claude-fable-5[1m]
+model = "fable"
 # low | medium | high | xhigh | max
 effort = "max"
 

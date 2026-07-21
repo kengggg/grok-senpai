@@ -156,7 +156,7 @@ install_grok() {
       cp "${SOURCE_GROK}/orchestration/worker-config.example.toml" \
         "${dest}/orchestration/worker-config.toml"
     fi
-    summary "Created .grok/orchestration/worker-config.toml (Opus/max, Sol/ultra)"
+    summary "Created .grok/orchestration/worker-config.toml (Fable/max, Sol/ultra)"
   fi
 
   if [[ -f "${dest}/orchestration/state.md" ]]; then

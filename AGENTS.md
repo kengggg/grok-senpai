@@ -73,7 +73,7 @@ The reviewer must receive: **Task Packet + Review Packet + read-only worktree/di
 
 | Worker | Model | Effort |
 |--------|-------|--------|
-| Claude (`claude-worker`) | `opus` | `max` |
+| Claude (`claude-worker`) | `fable` (Claude Fable) | `max` |
 | Codex (`codex-worker`) | `gpt-5.6-sol` (Sol) | `ultra` |
 
 Configured in `.grok/orchestration/worker-config.toml`. Skills must pass these flags **explicitly** on every invoke (do not rely on the user's global CLI defaults).
@@ -81,7 +81,7 @@ Configured in `.grok/orchestration/worker-config.toml`. Skills must pass these f
 **Grok may override** via Task Packet when `[policy].allow_override = true`:
 
 ```yaml
-worker_model: opus            # or gpt-5.6-sol, etc.
+worker_model: fable           # claude: fable | claude-fable-5 | … ; codex: gpt-5.6-sol
 worker_effort: high           # claude: low|medium|high|xhigh|max
                               # codex:  low|medium|high|xhigh|max|ultra
 ```

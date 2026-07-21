@@ -38,7 +38,7 @@ grok-senpai/
 │   │       └── SKILL.md
 │   └── orchestration/
 │       ├── state.md
-│       ├── worker-config.toml           # model + effort defaults (Opus/max, Sol/ultra)
+│       ├── worker-config.toml           # model + effort defaults (Fable/max, Sol/ultra)
 │       ├── worker-config.example.toml
 │       ├── TASK_PACKET.template.md
 │       ├── RESULT_PACKET.template.md
@@ -111,7 +111,7 @@ cp -R path/to/grok-senpai/.grok .
 
 | Worker | Model | Effort |
 |--------|-------|--------|
-| Claude | **Opus** (`opus`) | **`max`** |
+| Claude | **Fable** (`fable`) | **`max`** |
 | Codex | **Sol** (`gpt-5.6-sol`) | **`ultra`** |
 
 Grok may lower effort per Task Packet (`worker_effort`) when the playbook allows; floors default to `high`. Edit `.grok/orchestration/worker-config.toml` to change project defaults.
@@ -124,7 +124,7 @@ Re-run the installer to pull new skills + playbook (keeps your `state.md` and `w
 curl -sL https://raw.githubusercontent.com/kengggg/grok-senpai/main/install.sh | bash
 ```
 
-To reset worker defaults to stock Opus/max + Sol/ultra:
+To adopt stock **Fable/max + Sol/ultra** (overwrites your worker-config):
 
 ```bash
 cp .grok/orchestration/worker-config.example.toml .grok/orchestration/worker-config.toml
