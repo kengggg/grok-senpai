@@ -117,8 +117,36 @@ build_playbook_block() {
   printf '\n%s\n' "$MARKER_END"
 }
 
+ensure_logs_ignored() {
+  local ignore_file="${TARGET}/.gitignore"
+  local logs_pattern=".grok/orchestration/logs/*"
+  local keep_pattern="!.grok/orchestration/logs/.gitkeep"
+  local changed=false
+
+  if [[ ! -f "$ignore_file" ]]; then
+    : > "$ignore_file"
+  fi
+  if ! grep -qxF "$logs_pattern" "$ignore_file"; then
+    [[ -s "$ignore_file" ]] && printf '\n' >> "$ignore_file"
+    printf '%s\n' "$logs_pattern" >> "$ignore_file"
+    changed=true
+  fi
+  if ! grep -qxF "$keep_pattern" "$ignore_file"; then
+    # Keep keep-rule adjacent to logs_pattern (no extra blank when only this is missing).
+    printf '%s\n' "$keep_pattern" >> "$ignore_file"
+    changed=true
+  fi
+
+  if [[ "$changed" == true ]]; then
+    summary "Added worker-log rules to .gitignore"
+  else
+    summary "Kept existing worker-log rules in .gitignore"
+  fi
+}
+
 install_grok() {
   local dest="${TARGET}/.grok"
+  local keep_dir
   mkdir -p "${dest}/skills" "${dest}/orchestration"
 
   if [[ -d "${SOURCE_GROK}/skills" ]]; then
@@ -131,18 +159,43 @@ install_grok() {
       cp "${SOURCE_GROK}/orchestration/${f}" "${dest}/orchestration/${f}"
     fi
   done
-  # Ensure reviews directory exists (for Review Packets)
-  mkdir -p "${dest}/orchestration/reviews"
-  if [[ ! -f "${dest}/orchestration/reviews/.gitkeep" ]]; then
-    : > "${dest}/orchestration/reviews/.gitkeep"
-  fi
+  # Ensure durable handoff and gitignored worker-log directories exist.
+  mkdir -p "${dest}/orchestration/reviews" "${dest}/orchestration/logs"
+  for keep_dir in reviews logs; do
+    if [[ ! -f "${dest}/orchestration/${keep_dir}/.gitkeep" ]]; then
+      : > "${dest}/orchestration/${keep_dir}/.gitkeep"
+    fi
+  done
   summary "Updated .grok/orchestration packet templates (Task/Result/Review)"
+  summary "Ensured .grok/orchestration reviews/ and logs/ directories"
+  ensure_logs_ignored
 
   # Always refresh documented example config
   if [[ -f "${SOURCE_GROK}/orchestration/worker-config.example.toml" ]]; then
     cp "${SOURCE_GROK}/orchestration/worker-config.example.toml" \
       "${dest}/orchestration/worker-config.example.toml"
     summary "Updated .grok/orchestration/worker-config.example.toml"
+  fi
+
+  # Always refresh the documented alias example.
+  if [[ -f "${SOURCE_GROK}/orchestration/model-aliases.example.toml" ]]; then
+    cp "${SOURCE_GROK}/orchestration/model-aliases.example.toml" \
+      "${dest}/orchestration/model-aliases.example.toml"
+    summary "Updated .grok/orchestration/model-aliases.example.toml"
+  fi
+
+  # Project model-aliases.toml: create if missing; never overwrite local mappings.
+  if [[ -f "${dest}/orchestration/model-aliases.toml" ]]; then
+    summary "Kept existing .grok/orchestration/model-aliases.toml (project aliases win)"
+  else
+    if [[ -f "${SOURCE_GROK}/orchestration/model-aliases.toml" ]]; then
+      cp "${SOURCE_GROK}/orchestration/model-aliases.toml" \
+        "${dest}/orchestration/model-aliases.toml"
+    elif [[ -f "${SOURCE_GROK}/orchestration/model-aliases.example.toml" ]]; then
+      cp "${SOURCE_GROK}/orchestration/model-aliases.example.toml" \
+        "${dest}/orchestration/model-aliases.toml"
+    fi
+    summary "Created .grok/orchestration/model-aliases.toml"
   fi
 
   # Project worker-config.toml: create if missing; never overwrite (project customizations)
@@ -156,7 +209,7 @@ install_grok() {
       cp "${SOURCE_GROK}/orchestration/worker-config.example.toml" \
         "${dest}/orchestration/worker-config.toml"
     fi
-    summary "Created .grok/orchestration/worker-config.toml (Fable/max, Sol/ultra)"
+    summary "Created .grok/orchestration/worker-config.toml (Opus/max, Sol/ultra)"
   fi
 
   if [[ -f "${dest}/orchestration/state.md" ]]; then
@@ -168,9 +221,9 @@ install_grok() {
       cat > "${dest}/orchestration/state.md" <<'EOF'
 # Orchestration State (grok-senpai)
 
-| Task ID | Agent | Worktree Path | Branch | Status | Result Packet | Notes |
-|---------|-------|---------------|--------|--------|---------------|-------|
-|         |       |               |        |        |               |       |
+| Task ID | Agent | Role | Model | Effort | Worktree Path | Branch | Status | Phase | Started | Last heartbeat | Last signal | Result Packet | Log | PID | Notes |
+|---------|-------|------|-------|--------|---------------|--------|--------|-------|---------|----------------|-------------|---------------|-----|-----|-------|
+|         |       |      |       |        |               |        |        |       |         |                |             |               |     |     |       |
 EOF
     fi
     summary "Created .grok/orchestration/state.md"

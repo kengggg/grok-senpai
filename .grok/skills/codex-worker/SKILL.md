@@ -17,11 +17,14 @@ Follow AGENTS.md playbook rules.
 Read `.grok/orchestration/worker-config.toml` if present. Task Packet fields win when policy allows:
 
 ```yaml
+worker_model_alias: sol
 worker_model: gpt-5.6-sol
 worker_effort: max          # or ultra, high, …
 ```
 
 If `policy.enforce_floors` is true, do not set effort below `min_effort_codex` (default `high`).
+
+Natural-language model/role phrases are orchestrator input, not worker input. Before invoking this skill, Grok resolves `.grok/orchestration/model-aliases.toml` and writes the friendly alias, concrete CLI model, effort, `role`, and `role_source` into the Task Packet. Do not launch with an unresolved or unknown alias.
 
 ## Mandatory Process
 
@@ -29,7 +32,7 @@ If `policy.enforce_floors` is true, do not set effort below `min_effort_codex` (
 2. Read AGENTS.md and any CLAUDE.md / project conventions first.
 3. Receive a complete Task Packet. If any required field is missing or the task is ambiguous / out of scope, return a failed Result Packet immediately.
 4. For **independent_review**: require a Review Packet path/content. If missing, return failed.
-5. Resolve model/effort (config → Task Packet overrides → floors).
+5. Use the concrete model/effort resolved into the Task Packet; otherwise use config defaults, then apply floors.
 6. Execute the task with **explicit** `-m` and `-c model_reasoning_effort=...`.
 7. Run the Verification Commands from the Task Packet.
 8. **Implementation:** write Review Packet to `.grok/orchestration/reviews/<task_id>.md` (see `REVIEW_PACKET.template.md`) including `git status`, `git diff --stat`, verification table.
@@ -46,6 +49,21 @@ If `policy.enforce_floors` is true, do not set effort below `min_effort_codex` (
 - Keep the task tightly scoped. Do not expand scope.
 - Stop if you hit major ambiguity or the verification commands fail repeatedly.
 
+## Orchestrator-owned visibility
+
+Grok launches the command in the background, captures worker I/O at `.grok/orchestration/logs/<task_id>.log`, records the PID in `state.md`, and polls about every 2 minutes (see AGENTS.md canonical log-capture launch). The worker should emit its normal output and final Result Packet; it does **not** write progress files or self-heartbeats.
+
+Wrap every invoke with log capture (example):
+
+```bash
+TASK_ID="<task_id>"
+LOG=".grok/orchestration/logs/${TASK_ID}.log"
+mkdir -p "$(dirname "$LOG")"
+( cd "<Worktree Path>" && <codex-exec-command> ) >"$LOG" 2>&1 &
+WORKER_PID=$!
+# Write WORKER_PID + LOG into state.md before the first heartbeat.
+```
+
 ## Recommended Commands
 
 Resolve defaults first:
@@ -55,7 +73,7 @@ MODEL="${WORKER_MODEL:-gpt-5.6-sol}"
 EFFORT="${WORKER_EFFORT:-ultra}"
 ```
 
-Implementation:
+Implementation (foreground body; wrap with log capture above for production):
 
 ```bash
 cd "<Worktree Path>" && codex exec \
@@ -72,14 +90,16 @@ cd "<Worktree Path>" && codex exec \
   -m "$MODEL" \
   -c model_reasoning_effort="$EFFORT" \
   --sandbox read-only \
-  "You are the independent reviewer. Use the Task Packet AND Review Packet. Focus on checklist items, correctness, edge cases, security, missing tests, scope deviations. Do not implement features. Output a Result Packet with findings."
+  "You are the independent reviewer. Use the Task Packet AND Review Packet. Focus on checklist items, correctness, edge cases, security, missing tests, scope deviations. Do not implement features. Output a Result Packet with findings (Findings section or findings[])."
 ```
 
-**Default one-liners (no overrides):**
+**Default one-liners (no overrides; still wrap with log capture in production):**
 
 ```bash
-codex exec -m gpt-5.6-sol -c model_reasoning_effort=ultra --sandbox workspace-write "..."
-codex exec -m gpt-5.6-sol -c model_reasoning_effort=ultra --sandbox read-only "..."
+codex exec -m gpt-5.6-sol -c model_reasoning_effort=ultra --sandbox workspace-write "..." \
+  2>&1 | tee -a ".grok/orchestration/logs/<task_id>.log"
+codex exec -m gpt-5.6-sol -c model_reasoning_effort=ultra --sandbox read-only "..." \
+  2>&1 | tee -a ".grok/orchestration/logs/<task_id>.log"
 ```
 
 ## Required Output Format (Result Packet)
@@ -89,8 +109,12 @@ Result Packet
 Task ID: <same>
 Status: success | partial | failed
 Agent: codex
+Mode: implementation | independent_review
+Role: dev | review
+Role Source: default_routing | human_override
 Worktree Path: ...
 Branch: ...
+Worker Model Alias: sol
 Worker Model: gpt-5.6-sol
 Worker Effort: ultra
 Summary
@@ -109,6 +133,9 @@ Confidence
 Open Questions / Risks
 
 ...
+
+Findings (independent_review; omit or empty for implementation)
+- [blocker|major|minor|nit] title — detail
 
 Recommended Next Action
 merge | needs_review | iterate | discard | escalate_to_human

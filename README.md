@@ -2,9 +2,11 @@
 
 ![grok-senpai cover](docs/cover.jpg)
 
-**Multi-agent orchestration template for [Grok Build](https://x.ai/)** — orchestrate **Claude Code** and **Codex CLI** as specialized workers with isolated worktrees, Task Packets, Result Packets, and hard merge gates.
+**Multi-agent orchestration template for [Grok Build](https://x.ai/)** — orchestrate **Claude Code** and **Codex CLI** as specialized workers with isolated worktrees, Task Packets, Result Packets, live progress heartbeats, and hard merge gates.
 
 GitHub: [kengggg/grok-senpai](https://github.com/kengggg/grok-senpai)
+
+**Defaults:** Claude **Opus** (`opus`) at **`max`** · Codex **Sol** (`gpt-5.6-sol`) at **`ultra`**. Override in plain English any time.
 
 ## Why grok-senpai?
 
@@ -17,7 +19,7 @@ Solo agents blur planning, coding, and review. **grok-senpai** makes the workflo
 | Scoped implementation / mechanical review | Codex CLI (`codex-worker`) |
 | Simple independent slices | Grok subagents |
 
-Every non-trivial change is a **proposal** until verification, cross-model review, and human approval. See **[AGENTS.md](./AGENTS.md)** for the full playbook.
+Every non-trivial change is a **proposal** until verification, cross-model review, and human approval. See **[AGENTS.md](./AGENTS.md)** for the full playbook, or **[docs/design-model-roles-visibility.md](./docs/design-model-roles-visibility.md)** for model selection, roles, and visibility design.
 
 ## Prerequisites
 
@@ -38,19 +40,23 @@ grok-senpai/
 │   │       └── SKILL.md
 │   └── orchestration/
 │       ├── state.md
-│       ├── worker-config.toml           # model + effort defaults (Fable/max, Sol/ultra)
+│       ├── worker-config.toml           # model + effort defaults (Opus/max, Sol/ultra)
 │       ├── worker-config.example.toml
+│       ├── model-aliases.toml           # friendly name → CLI model
+│       ├── model-aliases.example.toml
 │       ├── TASK_PACKET.template.md
 │       ├── RESULT_PACKET.template.md
 │       ├── REVIEW_PACKET.template.md    # implementer → reviewer handoff
-│       └── reviews/                     # written Review Packets per task
+│       ├── reviews/                     # written Review Packets per task
+│       └── logs/                        # gitignored worker I/O
 ├── examples/
 │   └── clamp/                 # optional worked example
 ├── install.sh                 # install into another project
 ├── AGENTS.md                  # playbook (project instructions for Grok)
 ├── docs/
 │   ├── cover.jpg              # 16:9 README hero
-│   └── og-image.jpg           # 1280×640 (2:1) social preview, safe margins
+│   ├── og-image.jpg           # 1280×640 (2:1) social preview, safe margins
+│   └── design-model-roles-visibility.md
 ├── README.md
 └── LICENSE
 ```
@@ -100,8 +106,10 @@ cp -R path/to/grok-senpai/.grok .
 ### What gets installed
 
 - `.grok/skills/` — `claude-worker`, `codex-worker` (**always refreshed** on re-run)
-- `.grok/orchestration/` — Task/Result/**Review** packet templates + `worker-config.example.toml` (refreshed)
+- `.grok/orchestration/` — Task/Result/**Review** packet templates + config/alias examples (refreshed)
 - `worker-config.toml` — created once with defaults; **not overwritten** on re-run
+- `model-aliases.toml` — created once with friendly aliases; **not overwritten** on re-run
+- `logs/` — created for worker output used by progress heartbeats; ignore rules are added idempotently
 - `state.md` — created once; **kept** on re-run
 - `AGENTS.md` — Multi-Agent Orchestration Playbook merged or created (idempotent markers)
 
@@ -111,23 +119,61 @@ cp -R path/to/grok-senpai/.grok .
 
 | Worker | Model | Effort |
 |--------|-------|--------|
-| Claude | **Fable** (`fable`) | **`max`** |
+| Claude | **Opus** (`opus`) | **`max`** |
 | Codex | **Sol** (`gpt-5.6-sol`) | **`ultra`** |
 
 Grok may lower effort per Task Packet (`worker_effort`) when the playbook allows; floors default to `high`. Edit `.grok/orchestration/worker-config.toml` to change project defaults.
 
+Friendly aliases (edit `.grok/orchestration/model-aliases.toml`):
+
+| You say | CLI model |
+|---------|-----------|
+| `opus` / Opus 5 | `opus` |
+| `claude-opus-5` | `claude-opus-5` |
+| `fable` / `sonnet` | same alias |
+| `sol` | `gpt-5.6-sol` |
+
+### Choose models and roles in plain English
+
+You never need to edit a Task Packet. Add a model, effort, or one-turn role override when you want one:
+
+```text
+Use claude Opus 5 max for the architecture.
+Codex sol ultra, implement the approved slice.
+Claude dev, codex review this turn.
+Codex implement, claude review.
+```
+
+What Grok does with that:
+
+1. Resolves aliases via `model-aliases.toml` and writes concrete `worker_model` / `worker_effort` on the Task Packet  
+2. Echoes a **Launch plan** (agent, role, model, effort, worktree) before invoke  
+3. Confirms unknown aliases instead of launching blindly  
+4. Honors role overrides **for that task chain only**; otherwise uses the routing table in `AGENTS.md`
+
+### Live progress (heartbeats)
+
+While a worker runs, Grok:
+
+- Captures worker I/O to `.grok/orchestration/logs/<task_id>.log` (gitignored)
+- Records PID + log path in `.grok/orchestration/state.md`
+- Posts a short **heartbeat** about every **2 minutes** (and on “status?”)
+- Reports phase, last signal, and worktree churn — not a full tool stream
+
 ### Upgrade an existing project
 
-Re-run the installer to pull new skills + playbook (keeps your `state.md` and `worker-config.toml`):
+Re-run the installer to pull new skills + playbook (keeps your `state.md`, `worker-config.toml`, and `model-aliases.toml`):
 
 ```bash
 curl -sL https://raw.githubusercontent.com/kengggg/grok-senpai/main/install.sh | bash
 ```
 
-To adopt stock **Fable/max + Sol/ultra** (overwrites your worker-config):
+To adopt stock **Opus/max + Sol/ultra** (overwrites your worker-config):
 
 ```bash
 cp .grok/orchestration/worker-config.example.toml .grok/orchestration/worker-config.toml
+# optional: refresh aliases too
+cp .grok/orchestration/model-aliases.example.toml .grok/orchestration/model-aliases.toml
 ```
 
 ### After install — just talk to Grok
@@ -135,7 +181,7 @@ cp .grok/orchestration/worker-config.example.toml .grok/orchestration/worker-con
 You do **not** run worktrees, Task Packets, or workers yourself.
 
 1. Open **Grok Build** in the project (git repo recommended).
-2. Describe the goal in plain language (optionally: “follow the grok-senpai playbook”).
+2. Describe the goal in plain language; optionally name a model, effort, or per-turn role.
 3. **Grok** reads `AGENTS.md`, routes to Claude/Codex, verifies, and reviews.
 4. **You** only approve or reject the final diff when asked.
 
@@ -148,11 +194,11 @@ Follow the grok-senpai playbook.
 
 | You (human) | Grok (orchestrator) |
 |-------------|---------------------|
-| Describe the goal in plain language | Reads **AGENTS.md** and follows the playbook |
+| Describe the goal; optionally override models or roles | Reads **AGENTS.md** and follows the playbook |
 | Approve (or reject) final diffs when asked | Creates worktrees, Task Packets, launches workers |
 | That’s it — no need to micromanage steps | Runs verification, opposite-model review, updates `state.md`, merges after your approval |
 
-**You should not** invent worktree names, fill Task Packets, or pick Claude vs Codex yourself. **Grok does the job** you described, using this pack as its operating manual.
+**You do not need to** invent worktree names, fill Task Packets, or choose Claude vs Codex. Grok routes by default, while still honoring an explicit model or role override for the current task.
 
 ## Orchestration loop (Grok runs this)
 
@@ -160,8 +206,8 @@ Follow the grok-senpai playbook.
 You: state the goal
   → Grok: Plan
   → Grok: Worktree (orch/<task>-<agent>) — mandatory isolation
-  → Grok: Task Packet
-  → Grok: Worker skill (Claude or Codex)
+  → Grok: Task Packet + resolved Launch plan
+  → Grok: Worker skill (Claude or Codex) + ~2m heartbeats
   → Grok: Result Packet + verification
   → Grok: Review Packet (summary + diff handoff)
   → Grok: Independent review (opposite model)

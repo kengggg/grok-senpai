@@ -2,7 +2,9 @@
 .worktrees/
 .grok/orchestration/reviews/*
 !.grok/orchestration/reviews/.gitkeep
-
+.grok/orchestration/logs/*
+!.grok/orchestration/logs/.gitkeep
+.grok/orchestration/TASK_*.md
 
 # Python
 __pycache__/

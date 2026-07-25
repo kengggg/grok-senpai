@@ -13,8 +13,12 @@ Result Packet
 Task ID: <same as Task Packet>
 Status: success | partial | failed
 Agent: codex
+Mode: implementation | independent_review
+Role: dev | review
+Role Source: default_routing | human_override
 Worktree Path: ...
 Branch: ...
+Worker Model Alias: sol
 Worker Model: gpt-5.6-sol
 Worker Effort: ultra
 Summary
@@ -28,6 +32,8 @@ Confidence
 <1-5> (short justification)
 Open Questions / Risks
 ...
+Findings (independent_review only; omit or leave empty for implementation)
+- [blocker|major|minor|nit] <title> — <detail>
 Recommended Next Action
 merge | needs_review | iterate | discard | escalate_to_human
 ```
@@ -38,6 +44,10 @@ merge | needs_review | iterate | discard | escalate_to_human
 {
   "task_id": "...",
   "status": "success | partial | failed",
+  "agent": "claude",
+  "mode": "implementation | independent_review",
+  "role": "dev | review",
+  "role_source": "default_routing | human_override",
   "summary": "1-3 sentence overview",
   "files_changed": ["path1", "path2"],
   "tests_run": [
@@ -47,14 +57,19 @@ merge | needs_review | iterate | discard | escalate_to_human
   "open_questions": [],
   "risks": [],
   "recommended_next_action": "merge | needs_review | iterate | escalate_to_human | discard",
-  "worker_model": "fable",
+  "findings": [
+    {"severity": "blocker | major | minor | nit", "title": "...", "detail": "..."}
+  ],
+  "worker_model_alias": "opus",
+  "worker_model": "opus",
   "worker_effort": "max"
 }
 ```
 
-(`confidence` is an integer 1–5.)
+(`confidence` is an integer 1–5. `findings` is required for `independent_review` — use `[]` when none; optional/empty for implementation.)
 
 ## Orchestrator rules
 
 - Treat every Result Packet as a **proposal**.
+- Require the role source and the model/effort actually used for an auditable launch.
 - Do not merge until mandatory gates pass (see `AGENTS.md`).

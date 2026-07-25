@@ -2,7 +2,7 @@ name: claude-worker
 description: >
   Deep-reasoning worker for architecture, complex multi-file changes, high-stakes
   planning, and independent review in grok-senpai. Always runs headlessly inside
-  a dedicated worktree. Defaults: Claude Fable + effort max (overridable via Task Packet).
+  a dedicated worktree. Defaults: Claude Opus + effort max (overridable via Task Packet).
 
 You are launching Claude Code as a specialized deep-reasoning worker under the
 **grok-senpai** Grok orchestrator. Follow AGENTS.md playbook rules.
@@ -11,17 +11,20 @@ You are launching Claude Code as a specialized deep-reasoning worker under the
 
 | Setting | Default | Config key |
 |---------|---------|------------|
-| Model | `fable` (Claude Fable; aliases: `claude-fable-5`, `claude-fable-5[1m]`) | `.grok/orchestration/worker-config.toml` → `[claude].model` |
+| Model | `opus` (Claude Opus) | `.grok/orchestration/worker-config.toml` → `[claude].model` |
 | Effort | `max` | `[claude].effort` (`low` \| `medium` \| `high` \| `xhigh` \| `max`) |
 
 Read `.grok/orchestration/worker-config.toml` if present. Task Packet fields win when policy allows:
 
 ```yaml
-worker_model: fable         # optional override (e.g. claude-fable-5)
+worker_model_alias: sonnet  # optional friendly value for display/audit
+worker_model: sonnet        # concrete CLI value (optional override)
 worker_effort: high         # optional override (see AGENTS.md effort routing)
 ```
 
 If `policy.enforce_floors` is true, do not set effort below `min_effort_claude` (default `high`).
+
+Natural-language model/role phrases are orchestrator input, not worker input. Before invoking this skill, Grok resolves `.grok/orchestration/model-aliases.toml` and writes the friendly alias, concrete CLI model, effort, `role`, and `role_source` into the Task Packet. Do not launch with an unresolved or unknown alias.
 
 ## Preconditions
 
@@ -46,13 +49,30 @@ If not isolated and the Task Packet did not mark `allow_primary_checkout: true`,
 
 Always use headless mode with safety rails. **Always pass model + effort explicitly.**
 
+### Orchestrator-owned visibility
+
+Grok launches the command in the background, captures worker I/O at `.grok/orchestration/logs/<task_id>.log`, records the PID in `state.md`, and polls about every 2 minutes (see AGENTS.md canonical log-capture launch). The worker should emit its normal output and final Result Packet; it does **not** write progress files or self-heartbeats.
+
+Wrap every invoke with log capture (example):
+
+```bash
+TASK_ID="<task_id>"
+LOG=".grok/orchestration/logs/${TASK_ID}.log"
+mkdir -p "$(dirname "$LOG")"
+# ... set MODEL/EFFORT and run the mode-specific command below as WORKER_CMD ...
+( cd "<Worktree Path>" && eval "$WORKER_CMD" ) >"$LOG" 2>&1 &
+WORKER_PID=$!
+# Write WORKER_PID + LOG into state.md before the first heartbeat.
+```
+
 ### Implementation mode
 
 ```bash
-MODEL="${WORKER_MODEL:-fable}"
+MODEL="${WORKER_MODEL:-opus}"
 EFFORT="${WORKER_EFFORT:-max}"
 
-cd "<Worktree Path>" && claude \
+WORKER_CMD=$(cat <<CMD
+claude \
   --model "$MODEL" \
   --effort "$EFFORT" \
   -p "$(cat <<'EOF'
@@ -73,15 +93,21 @@ EOF
   --max-turns 40 \
   --permission-mode acceptEdits \
   --allowedTools "Read,Edit,Write,Bash,Glob,Grep"
+CMD
+)
+# Prefer the canonical log-capture launch from AGENTS.md (background + LOG + PID).
+# Foreground (debug only):
+# cd "<Worktree Path>" && eval "$WORKER_CMD" 2>&1 | tee -a ".grok/orchestration/logs/<task_id>.log"
 ```
 
 ### Independent review mode (read-only intent)
 
 ```bash
-MODEL="${WORKER_MODEL:-fable}"
+MODEL="${WORKER_MODEL:-opus}"
 EFFORT="${WORKER_EFFORT:-max}"
 
-cd "<Worktree Path>" && claude \
+WORKER_CMD=$(cat <<CMD
+claude \
   --model "$MODEL" \
   --effort "$EFFORT" \
   -p "$(cat <<'EOF'
@@ -92,22 +118,26 @@ You are the independent reviewer (opposite model of the implementer).
 Do NOT implement features. Prefer not to edit production code.
 Read the Review Packet, run git diff / listed verification if needed.
 Focus on the reviewer checklist in the Review Packet.
-When finished, output ONLY a Result Packet (review findings in summary/risks/open_questions).
+When finished, output ONLY a Result Packet including findings[] (see template).
 EOF
 )" \
   --output-format json \
   --max-turns 40 \
   --permission-mode acceptEdits \
   --allowedTools "Read,Bash,Glob,Grep"
+CMD
+)
+# Prefer the canonical log-capture launch from AGENTS.md (background + LOG + PID).
 ```
 
-**Default one-liner (no overrides):**
+**Default one-liner (no overrides; still wrap with log capture in production):**
 
 ```bash
-cd "<Worktree Path>" && claude --model fable --effort max -p "..." \
+cd "<Worktree Path>" && claude --model opus --effort max -p "..." \
   --output-format json --max-turns 40 \
   --permission-mode acceptEdits \
-  --allowedTools "Read,Edit,Write,Bash,Glob,Grep"
+  --allowedTools "Read,Edit,Write,Bash,Glob,Grep" \
+  2>&1 | tee -a ".grok/orchestration/logs/<task_id>.log"
 ```
 
 ## Required Result Packet Format
@@ -118,6 +148,10 @@ Return a structured Result Packet (JSON preferred):
 {
   "task_id": "...",
   "status": "success | partial | failed",
+  "agent": "claude",
+  "mode": "implementation | independent_review",
+  "role": "dev | review",
+  "role_source": "default_routing | human_override",
   "summary": "1-3 sentence overview of what was done",
   "files_changed": ["path1", "path2"],
   "tests_run": [
@@ -127,12 +161,16 @@ Return a structured Result Packet (JSON preferred):
   "open_questions": [],
   "risks": [],
   "recommended_next_action": "merge | needs_review | iterate | escalate_to_human | discard",
-  "worker_model": "fable",
+  "findings": [
+    {"severity": "blocker | major | minor | nit", "title": "...", "detail": "..."}
+  ],
+  "worker_model_alias": "opus",
+  "worker_model": "opus",
   "worker_effort": "max"
 }
 ```
 
-(`confidence` is an integer 1–5. Include the model/effort actually used.)
+(`confidence` is an integer 1–5. Include the model/effort actually used. Use `findings` for **independent_review**; may be `[]` for implementation.)
 
 Also see `.grok/orchestration/RESULT_PACKET.template.md`.
 

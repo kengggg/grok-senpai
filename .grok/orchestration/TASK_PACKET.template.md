@@ -6,6 +6,8 @@ Copy this file (or paste into the worker prompt) when launching a **claude-worke
 task_id: <short-id>                 # e.g. feat-auth-001
 agent: codex | claude
 mode: implementation | independent_review
+role: dev | review                  # human-facing role; maps to mode
+role_source: default_routing | human_override
 worktree_path: <absolute path>      # required isolated worktree for non-trivial work
 branch: orch/<short-task>-<agent>
 created_by: grok-senpai-orchestrator
@@ -14,10 +16,12 @@ allow_primary_checkout: false       # true only if human approved in-place trivi
 review_packet_path: <optional>      # required for independent_review; e.g. .grok/orchestration/reviews/<task_id>.md
 
 # Worker model & effort (optional — defaults from worker-config.toml)
-# Defaults: claude → fable + max | codex → gpt-5.6-sol + ultra
-worker_model: <optional>            # e.g. fable | claude-fable-5 | gpt-5.6-sol
+# Defaults: claude → opus + max | codex → gpt-5.6-sol + ultra
+# Natural-language choices are resolved before launch; worker_model is the CLI value.
+worker_model: <optional>            # e.g. opus | sonnet | gpt-5.6-sol
 worker_effort: <optional>           # claude: low|medium|high|xhigh|max
                                     # codex:  low|medium|high|xhigh|max|ultra
+worker_model_alias: <optional>      # friendly display value, e.g. opus | sol
 # Omit both fields to use max/ultra defaults. Only lower when policy + task shape allow.
 
 goal: |
