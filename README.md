@@ -6,7 +6,7 @@
 
 GitHub: [kengggg/grok-senpai](https://github.com/kengggg/grok-senpai)
 
-**Defaults:** Claude **Opus** (`opus`) at **`max`** · Codex **Sol** (`gpt-5.6-sol`) at **`ultra`**. Override in plain English any time.
+**Defaults:** Claude **Fable** (`fable`) at **`high`** · Codex **Sol** (`gpt-5.6-sol`) at **`ultra`**. Override in plain English any time.
 
 ## Why grok-senpai?
 
@@ -40,7 +40,7 @@ grok-senpai/
 │   │       └── SKILL.md
 │   └── orchestration/
 │       ├── state.md
-│       ├── worker-config.toml           # model + effort defaults (Opus/max, Sol/ultra)
+│       ├── worker-config.toml           # model + effort defaults (Fable/high, Sol/ultra)
 │       ├── worker-config.example.toml
 │       ├── model-aliases.toml           # friendly name → CLI model
 │       ├── model-aliases.example.toml
@@ -119,7 +119,7 @@ cp -R path/to/grok-senpai/.grok .
 
 | Worker | Model | Effort |
 |--------|-------|--------|
-| Claude | **Opus** (`opus`) | **`max`** |
+| Claude | **Fable** (`fable`) | **`high`** |
 | Codex | **Sol** (`gpt-5.6-sol`) | **`ultra`** |
 
 Grok may lower effort per Task Packet (`worker_effort`) when the playbook allows; floors default to `high`. Edit `.grok/orchestration/worker-config.toml` to change project defaults.
@@ -138,7 +138,7 @@ Friendly aliases (edit `.grok/orchestration/model-aliases.toml`):
 You never need to edit a Task Packet. Add a model, effort, or one-turn role override when you want one:
 
 ```text
-Use claude Opus 5 max for the architecture.
+Use claude Opus 5 max for the architecture.   # optional override; default is Fable high
 Codex sol ultra, implement the approved slice.
 Claude dev, codex review this turn.
 Codex implement, claude review.
@@ -168,7 +168,7 @@ Re-run the installer to pull new skills + playbook (keeps your `state.md`, `work
 curl -sL https://raw.githubusercontent.com/kengggg/grok-senpai/main/install.sh | bash
 ```
 
-To adopt stock **Opus/max + Sol/ultra** (overwrites your worker-config):
+To adopt stock **Fable/high + Sol/ultra** (overwrites your worker-config):
 
 ```bash
 cp .grok/orchestration/worker-config.example.toml .grok/orchestration/worker-config.toml

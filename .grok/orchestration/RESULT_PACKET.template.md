@@ -60,9 +60,9 @@ merge | needs_review | iterate | discard | escalate_to_human
   "findings": [
     {"severity": "blocker | major | minor | nit", "title": "...", "detail": "..."}
   ],
-  "worker_model_alias": "opus",
-  "worker_model": "opus",
-  "worker_effort": "max"
+  "worker_model_alias": "fable",
+  "worker_model": "fable",
+  "worker_effort": "high"
 }
 ```
 

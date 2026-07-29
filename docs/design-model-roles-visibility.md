@@ -2,7 +2,8 @@
 
 **Status:** approved  
 **Date:** 2026-07-25  
-**Approval amendment:** Claude’s default is `opus` + `max`; Fable remains an available alias but is not the default.  
+**Approval amendment (2026-07-25):** Claude’s default was `opus` + `max`.  
+**Later amendment (2026-07-29):** Claude’s default is `fable` + `high` (Fable High). Opus remains an available alias for explicit per-turn overrides.  
 **Scope:** grok-senpai orchestrator playbook + worker skills + orchestration state  
 **Non-goals:** changing Claude/Codex product CLIs; building a separate UI; worker self-reporting heartbeats
 
@@ -12,7 +13,7 @@
 
 Today grok-senpai already supports:
 
-- Per-worker defaults in `worker-config.toml` (Claude Opus/max, Codex Sol/ultra)
+- Per-worker defaults in `worker-config.toml` (Claude Fable/high, Codex Sol/ultra)
 - Per-task overrides via Task Packet `worker_model` / `worker_effort`
 - Modes `implementation | independent_review`
 
@@ -36,7 +37,7 @@ Gaps:
 | Progress content | **Short heartbeat** (not rich digests) |
 | Model names | **Friendly alias map** → CLI ids; unknown → ask human |
 | Delivery | **Design first, then implement** (this doc) |
-| Claude default | **Opus** (`opus`) at `max` effort (approval amendment) |
+| Claude default | **Fable** (`fable`) at `high` effort (2026-07-29 amendment; Opus available as override) |
 
 ---
 
@@ -96,10 +97,10 @@ Claude Code (`claude --model`):
 
 | Alias (human) | CLI value | Notes |
 |---------------|-----------|--------|
-| `opus` | `opus` | default worker; “Opus 5” / “claude opus” → this |
+| `opus` | `opus` | optional high-stakes override; “Opus 5” / “claude opus” → this |
 | `claude-opus-5` | `claude-opus-5` | full id pass-through |
 | `claude-opus-5[1m]` | `claude-opus-5[1m]` | long-context variant when available |
-| `fable` | `fable` | supported override |
+| `fable` | `fable` | default worker (Fable High) |
 | `sonnet` | `sonnet` | |
 | `claude-fable-5` | `claude-fable-5` | full id pass-through |
 | `claude-fable-5[1m]` | `claude-fable-5[1m]` | long-context variant |
@@ -134,7 +135,7 @@ Highest wins:
 1. Explicit Task Packet `worker_model` / `worker_effort` (if set this turn)
 2. Natural-language resolution for this turn
 3. `worker-config.toml` defaults
-4. Skill hard-coded fallbacks (opus/max, gpt-5.6-sol/ultra)
+4. Skill hard-coded fallbacks (fable/high, gpt-5.6-sol/ultra)
 
 Then apply effort floors if `enforce_floors`.
 
@@ -212,7 +213,7 @@ Add `.grok/orchestration/logs/` to template `.gitignore` (or repo root gitignore
 
 ```text
 ⏱ heartbeat · <task_id> · <elapsed>
-agent: claude (dev) · model: opus · effort: max
+agent: claude (dev) · model: fable · effort: high
 phase: running | starting | finishing | stalled?
 last signal: <1 line from log tail or git>
 worktree: <N files changed, M lines>   # from git status/diff --stat when available
@@ -333,4 +334,4 @@ No change to merge gates order; visibility is orthogonal to gates.
 
 ## 7. Approval
 
-Approved on 2026-07-25 with one amendment: Claude defaults to `opus` at `max` effort, superseding the draft’s Fable default. Fable remains a supported friendly alias for explicit per-turn overrides. The alias-map, role-override, ~2-minute heartbeat, and launch-echo decisions are otherwise approved as written.
+Approved on 2026-07-25 with amendment: Claude defaults to `opus` at `max`. Superseded 2026-07-29: Claude defaults to `fable` at `high` (Fable High); Opus remains a supported friendly alias for explicit per-turn overrides. The alias-map, role-override, ~2-minute heartbeat, and launch-echo decisions are otherwise approved as written.

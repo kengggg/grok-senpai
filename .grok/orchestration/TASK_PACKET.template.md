@@ -16,13 +16,13 @@ allow_primary_checkout: false       # true only if human approved in-place trivi
 review_packet_path: <optional>      # required for independent_review; e.g. .grok/orchestration/reviews/<task_id>.md
 
 # Worker model & effort (optional — defaults from worker-config.toml)
-# Defaults: claude → opus + max | codex → gpt-5.6-sol + ultra
+# Defaults: claude → fable + high | codex → gpt-5.6-sol + ultra
 # Natural-language choices are resolved before launch; worker_model is the CLI value.
-worker_model: <optional>            # e.g. opus | sonnet | gpt-5.6-sol
+worker_model: <optional>            # e.g. fable | opus | sonnet | gpt-5.6-sol
 worker_effort: <optional>           # claude: low|medium|high|xhigh|max
                                     # codex:  low|medium|high|xhigh|max|ultra
-worker_model_alias: <optional>      # friendly display value, e.g. opus | sol
-# Omit both fields to use max/ultra defaults. Only lower when policy + task shape allow.
+worker_model_alias: <optional>      # friendly display value, e.g. fable | sol
+# Omit both fields to use high/ultra defaults. Only lower when policy + task shape allow.
 
 goal: |
   <what to accomplish>

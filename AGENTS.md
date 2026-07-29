@@ -73,7 +73,7 @@ The reviewer must receive: **Task Packet + Review Packet + read-only worktree/di
 
 | Worker | Model | Effort |
 |--------|-------|--------|
-| Claude (`claude-worker`) | `opus` (Claude Opus) | `max` |
+| Claude (`claude-worker`) | `fable` (Claude Fable) | `high` |
 | Codex (`codex-worker`) | `gpt-5.6-sol` (Sol) | `ultra` |
 
 Configured in `.grok/orchestration/worker-config.toml`. Skills must pass these flags **explicitly** on every invoke (do not rely on the user's global CLI defaults).
@@ -81,8 +81,8 @@ Configured in `.grok/orchestration/worker-config.toml`. Skills must pass these f
 **Grok may override** via Task Packet when `[policy].allow_override = true`:
 
 ```yaml
-worker_model: opus            # concrete CLI id; claude example
-worker_model_alias: opus      # friendly name retained for display/audit
+worker_model: fable           # concrete CLI id; claude example
+worker_model_alias: fable     # friendly name retained for display/audit
 worker_effort: high           # claude: low|medium|high|xhigh|max
                               # codex:  low|medium|high|xhigh|max|ultra
 ```
@@ -96,7 +96,7 @@ worker_effort: high           # claude: low|medium|high|xhigh|max
 | Normal feature / solid implementation | `high`–`max` | `high`–`ultra` |
 | Tiny mechanical edit, single file, clear tests | `high` (floor) | `high` (floor) |
 
-If `policy.enforce_floors` is true (default), never go below `min_effort_claude` / `min_effort_codex` (default `high`). Prefer staying at **max/ultra** when unsure.
+If `policy.enforce_floors` is true (default), never go below `min_effort_claude` / `min_effort_codex` (default `high`). Prefer the defaults (**high** / **ultra**) when unsure; raise Claude to `max` (or switch to `opus`) only for architecture, security, or high-stakes review.
 
 ### Natural-language model and effort selection
 
@@ -128,7 +128,7 @@ Model/effort precedence, highest first:
 1. Explicit `worker_model` / `worker_effort` already present in this turn's Task Packet
 2. Natural-language resolution for this turn
 3. Defaults in `.grok/orchestration/worker-config.toml`
-4. Skill fallbacks (`opus`/`max` for Claude; `gpt-5.6-sol`/`ultra` for Codex)
+4. Skill fallbacks (`fable`/`high` for Claude; `gpt-5.6-sol`/`ultra` for Codex)
 
 After resolution, apply configured effort floors. Task Packet overrides are allowed only when `policy.allow_override = true`.
 
@@ -137,8 +137,8 @@ When `policy.require_launch_echo = true` (the default), show the resolved plan b
 ```text
 Launch plan
 - agent: claude | role: dev | source: human_override
-- model: opus (cli: opus)
-- effort: max
+- model: fable (cli: fable)
+- effort: high
 - worktree: /absolute/worktree/path
 ```
 
@@ -197,7 +197,7 @@ Heartbeat format:
 
 ```text
 ⏱ heartbeat · <task_id> · <elapsed>
-agent: claude (dev) · model: opus · effort: max
+agent: claude (dev) · model: fable · effort: high
 phase: starting | running | testing | finishing | stalled?
 last signal: <redacted log or git signal>
 worktree: <N files changed, M lines>

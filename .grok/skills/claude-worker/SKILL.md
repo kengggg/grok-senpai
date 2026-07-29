@@ -2,7 +2,7 @@ name: claude-worker
 description: >
   Deep-reasoning worker for architecture, complex multi-file changes, high-stakes
   planning, and independent review in grok-senpai. Always runs headlessly inside
-  a dedicated worktree. Defaults: Claude Opus + effort max (overridable via Task Packet).
+  a dedicated worktree. Defaults: Claude Fable + effort high (overridable via Task Packet).
 
 You are launching Claude Code as a specialized deep-reasoning worker under the
 **grok-senpai** Grok orchestrator. Follow AGENTS.md playbook rules.
@@ -11,8 +11,8 @@ You are launching Claude Code as a specialized deep-reasoning worker under the
 
 | Setting | Default | Config key |
 |---------|---------|------------|
-| Model | `opus` (Claude Opus) | `.grok/orchestration/worker-config.toml` → `[claude].model` |
-| Effort | `max` | `[claude].effort` (`low` \| `medium` \| `high` \| `xhigh` \| `max`) |
+| Model | `fable` (Claude Fable) | `.grok/orchestration/worker-config.toml` → `[claude].model` |
+| Effort | `high` | `[claude].effort` (`low` \| `medium` \| `high` \| `xhigh` \| `max`) |
 
 Read `.grok/orchestration/worker-config.toml` if present. Task Packet fields win when policy allows:
 
@@ -68,8 +68,8 @@ WORKER_PID=$!
 ### Implementation mode
 
 ```bash
-MODEL="${WORKER_MODEL:-opus}"
-EFFORT="${WORKER_EFFORT:-max}"
+MODEL="${WORKER_MODEL:-fable}"
+EFFORT="${WORKER_EFFORT:-high}"
 
 WORKER_CMD=$(cat <<CMD
 claude \
@@ -103,8 +103,8 @@ CMD
 ### Independent review mode (read-only intent)
 
 ```bash
-MODEL="${WORKER_MODEL:-opus}"
-EFFORT="${WORKER_EFFORT:-max}"
+MODEL="${WORKER_MODEL:-fable}"
+EFFORT="${WORKER_EFFORT:-high}"
 
 WORKER_CMD=$(cat <<CMD
 claude \
@@ -133,7 +133,7 @@ CMD
 **Default one-liner (no overrides; still wrap with log capture in production):**
 
 ```bash
-cd "<Worktree Path>" && claude --model opus --effort max -p "..." \
+cd "<Worktree Path>" && claude --model fable --effort high -p "..." \
   --output-format json --max-turns 40 \
   --permission-mode acceptEdits \
   --allowedTools "Read,Edit,Write,Bash,Glob,Grep" \
@@ -164,9 +164,9 @@ Return a structured Result Packet (JSON preferred):
   "findings": [
     {"severity": "blocker | major | minor | nit", "title": "...", "detail": "..."}
   ],
-  "worker_model_alias": "opus",
-  "worker_model": "opus",
-  "worker_effort": "max"
+  "worker_model_alias": "fable",
+  "worker_model": "fable",
+  "worker_effort": "high"
 }
 ```
 
