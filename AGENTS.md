@@ -187,7 +187,7 @@ Grok owns progress visibility; workers do not need to write progress files or em
 # prints the worker PID. Do not use tee … & — that PID is the pipeline.
 ```
 
-Do **not** `eval` a composed command. Do **not** put packet bytes on argv when the prompt is large — the helper switches to `--prompt-file`.
+Do **not** `eval` a composed command. Do **not** put packet bytes on argv. The host passes a path to `launch --prompt-file`; the helper copies it to disk and feeds it on the runner's stdin (`claude --print`, `codex exec -`). Real CLIs reject `--prompt-file`.
 
 Heartbeat format:
 

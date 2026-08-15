@@ -401,17 +401,18 @@ cmd_launch() {
   log_out="$(orch_dir)/logs/${task_id}.${attempt}.stdout"
   log_err="$(orch_dir)/logs/${task_id}.${attempt}.stderr"
 
+  # Real claude/codex reject --prompt-file. Feed the stored prompt on stdin.
+  # Never interpolate packet bytes into argv. Helper --prompt-file stays a host flag.
   local -a argv
   if [[ "$agent" == "claude" ]]; then
     bin="${SENPAI_CLAUDE_BIN:-claude}"
-    argv=("$bin" --model "$model" --effort "$effort" --output-format json --max-turns 40)
+    # --print is required for non-interactive; it reads the user prompt from stdin.
+    argv=("$bin" --print --model "$model" --effort "$effort" --output-format json --max-turns 40)
     if [[ "$mode" == "implementation" ]]; then
       argv+=(--permission-mode acceptEdits --allowedTools "Read,Edit,Write,Bash,Glob,Grep")
     else
       argv+=(--permission-mode plan --allowedTools "Read,Bash,Glob,Grep")
     fi
-    # Always pass a path. Never interpolate packet bytes into the helper shell.
-    argv+=(--prompt-file "$stored_prompt")
   else
     bin="${SENPAI_CODEX_BIN:-codex}"
     argv=("$bin" exec -m "$model" -c "model_reasoning_effort=${effort}")
@@ -420,7 +421,7 @@ cmd_launch() {
     else
       argv+=(--sandbox read-only)
     fi
-    argv+=(--prompt-file "$stored_prompt")
+    argv+=(-)
   fi
 
   command -v "$bin" >/dev/null 2>&1 || [[ -x "$bin" ]] || die "launch: binary not found: $bin"
@@ -436,7 +437,7 @@ cmd_launch() {
 
   (
     cd "$cwd"
-    "${argv[@]}" >"$log_out" 2>"$log_err"
+    "${argv[@]}" <"$stored_prompt" >"$log_out" 2>"$log_err"
   ) &
   pid=$!
   local start_token

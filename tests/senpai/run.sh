@@ -182,7 +182,8 @@ path, proj, prompt = sys.argv[1], sys.argv[2], sys.argv[3]
 parts = open(path, "rb").read().split(b"\0")
 parts = [p.decode("utf-8", "replace") for p in parts if p]
 blob = "\n".join(parts)
-assert "--prompt-file" in parts, parts
+assert "--prompt-file" not in parts, parts
+assert "--print" in parts, parts
 assert "--model" in parts, parts
 assert "eval" not in blob
 assert not any("$(true)" in p for p in parts)
@@ -219,6 +220,8 @@ parts=open(sys.argv[1],"rb").read().split(b"\0")
 parts=[p.decode() for p in parts if p]
 assert "--sandbox" in parts
 assert "read-only" in parts
+assert "--prompt-file" not in parts, parts
+assert "-" in parts, parts
 print("ok")
 PY
 assert "review: codex read-only sandbox" test $? -eq 0
@@ -233,24 +236,38 @@ else
   PASS=$((PASS + 1))
 fi
 
-# oversized prompt uses --prompt-file
+# oversized prompt stays on disk + stdin; never an argv element
 BIG="$WORKDIR/big.txt"
 python3 - <<PY
 open("$BIG","wb").write(b"X"*(100000+10))
 PY
 ARGV4="$WORKDIR/argv-big.nul"
-SENPAI_ARGV_OUT="$ARGV4" "$SENPAI" launch --agent claude --mode implementation \
+STDIN4="$WORKDIR/stdin-big.txt"
+SENPAI_ARGV_OUT="$ARGV4" SENPAI_STDIN_OUT="$STDIN4" \
+  "$SENPAI" launch --agent claude --mode implementation \
   --task-id t-big --chain c-big --prompt-file "$BIG" --cwd "$WT" >/dev/null
-python3 - "$ARGV4" <<'PY'
-import sys
+# fake records stdin after helper returns the pid
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+  if [[ -f "$STDIN4" && "$(wc -c <"$STDIN4" | tr -d ' ')" -eq 100010 ]]; then
+    break
+  fi
+  sleep 0.05
+done
+python3 - "$ARGV4" "$STDIN4" "$PROJ/.grok/orchestration/prompts/t-big.1.txt" <<'PY'
+import sys, os
 parts=open(sys.argv[1],"rb").read().split(b"\0")
 parts=[p.decode() for p in parts if p]
-assert "--prompt-file" in parts, parts
-# the huge payload must not be an argv element
+assert "--prompt-file" not in parts, parts
+assert "--print" in parts, parts
 assert not any(len(p) > 50000 for p in parts)
+stdin=open(sys.argv[2],"rb").read()
+stored=open(sys.argv[3],"rb").read()
+assert len(stdin)==100010, len(stdin)
+assert stdin==stored
+assert stdin==b"X"*100010
 print("ok")
 PY
-assert "launch: oversized prompt is a path" test $? -eq 0
+assert "launch: oversized prompt is stdin, not argv" test $? -eq 0
 
 # collect
 RES="$WORKDIR/result.json"
