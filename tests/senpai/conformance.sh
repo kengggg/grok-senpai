@@ -79,25 +79,60 @@ sleep 2
 "$SENPAI" lock --chain p1 >/dev/null
 assert "crash-resume: steal" test $? -eq 0
 
-# Real CLI probes (do not fail)
+# Real CLI probes (do not fail the suite; never start a live model session)
 echo
 echo "## Real CLI probes (UNKNOWN — not a merge gate)"
+echo "probe: helper launch still passes --prompt-file to both runners"
+echo "probe: skill files exist after install (discovery fire still UNKNOWN)"
+assert "probe: project .claude/skills/senpai present" \
+  test -f "$PROJ/.claude/skills/senpai/SKILL.md"
+assert "probe: project .agents/skills/senpai present" \
+  test -f "$PROJ/.agents/skills/senpai/SKILL.md"
+
 if command -v claude >/dev/null 2>&1; then
-  echo "probe: claude is on PATH"
-  if claude --help 2>/dev/null | grep -qi 'prompt-file\|--p '; then
-    echo "probe: claude help mentions a prompt flag"
+  echo "probe: claude is on PATH ($(claude --version 2>/dev/null | head -1))"
+  if claude --help 2>/dev/null | grep -q -- '--prompt-file'; then
+    echo "probe: claude help mentions --prompt-file"
   else
     echo "probe: claude help did not mention --prompt-file (UNKNOWN)"
   fi
+  if claude --help 2>/dev/null | grep -q -- '--system-prompt'; then
+    echo "probe: claude help mentions --system-prompt (not a Result prompt-file)"
+  fi
+  set +e
+  claude --prompt-file "$PROMPT" </dev/null >"$WORKDIR/claude-pf.out" 2>"$WORKDIR/claude-pf.err"
+  _ce=$?
+  set -e
+  if grep -qi 'unknown option' "$WORKDIR/claude-pf.err"; then
+    echo "probe: claude rejects --prompt-file (UNKNOWN; helper still passes it)"
+  else
+    echo "probe: claude --prompt-file exit=${_ce} (UNKNOWN; $(head -1 "$WORKDIR/claude-pf.err"))"
+  fi
+  echo "probe: review-sandbox fence of git-common-dir is UNKNOWN (no live session)"
 else
   echo "probe: claude not installed (UNKNOWN)"
 fi
 if command -v codex >/dev/null 2>&1; then
-  echo "probe: codex is on PATH"
-  if codex exec --help 2>/dev/null | grep -qi 'prompt-file'; then
-    echo "probe: codex mentions --prompt-file"
+  echo "probe: codex is on PATH ($(codex --version 2>/dev/null | head -1))"
+  if codex exec --help 2>/dev/null | grep -q -- '--prompt-file'; then
+    echo "probe: codex exec help mentions --prompt-file"
   else
     echo "probe: codex exec --help did not mention --prompt-file (UNKNOWN)"
+  fi
+  if codex exec --help 2>/dev/null | grep -qi 'stdin'; then
+    echo "probe: codex exec documents stdin / '-' for the prompt (not --prompt-file)"
+  fi
+  if codex exec --help 2>/dev/null | grep -q 'read-only'; then
+    echo "probe: codex exec lists sandbox read-only; git-common-dir fence is UNKNOWN"
+  fi
+  set +e
+  codex exec --prompt-file "$PROMPT" -h >"$WORKDIR/codex-pf.out" 2>"$WORKDIR/codex-pf.err"
+  _xe=$?
+  set -e
+  if grep -qi 'unexpected argument' "$WORKDIR/codex-pf.err"; then
+    echo "probe: codex exec rejects --prompt-file (UNKNOWN; helper still passes it)"
+  else
+    echo "probe: codex exec --prompt-file exit=${_xe} (UNKNOWN; $(head -1 "$WORKDIR/codex-pf.err"))"
   fi
 else
   echo "probe: codex not installed (UNKNOWN)"
