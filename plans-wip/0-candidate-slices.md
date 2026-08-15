@@ -1,0 +1,56 @@
+# Slice Discovery Board
+
+Candidate slices for grok-senpai. Written after Keng said “record this” and [wiki/slice-1-agent-independent-senpai.md](../wiki/slice-1-agent-independent-senpai.md) landed (`56a809d`). No requirement IDs invented.
+
+## Tier Classification
+
+| Tier | Criteria |
+|---|---|
+| T1 - Foundation | Must ship first; other slices depend on it |
+| T2 - Core Value | High user value, few dependencies |
+| T3 - Enhancement | Nice to have, can defer |
+| T4 - Blocked | Has unresolved unknowns |
+
+## Candidates
+
+### T1 - Foundation
+
+| # | Candidate | Source | Status | Dependencies | Notes |
+|---|---|---|---|---|---|
+| - | - | - | - | - | - |
+
+### T2 - Core Value
+
+| # | Candidate | Source | Status | Dependencies | Notes |
+|---|---|---|---|---|---|
+| - | - | - | - | - | - |
+
+### T3 - Enhancement
+
+From [wiki/slice-1-agent-independent-senpai.md](../wiki/slice-1-agent-independent-senpai.md) “Not this slice”. Later work. No IDs.
+
+| # | Candidate | Source | Status | Dependencies | Notes |
+|---|---|---|---|---|---|
+| - | Live state move to `.senpai/` | wiki/slice-1 | later | slice-1 | out of PR #1 |
+| - | Public `--host` installer flag | wiki/slice-1 | later | slice-1 | today `$1` is the target directory |
+| - | SQLite; required Python/jq | wiki/slice-1 | later | slice-1 | |
+| - | Proven Claude/Codex host parity | wiki/slice-1 | later | slice-1 | real-CLI conformance |
+| - | Leftover Mac nits | wiki/slice-1 | later | slice-1 | Darwin `/proc`; collect grep; `cost` false-positive |
+
+### T4 - Blocked
+
+None yet.
+
+## Recently Closed
+
+| # | Candidate | Source | Status | Notes |
+|---|---|---|---|---|
+| 1 | Agent-independent senpai (helper + three host adapters) | PR#1 | closed | wiki/slice-1-agent-independent-senpai.md · `main` `4eea9e5` · wiki `56a809d` |
+
+---
+
+## Board Maintenance
+
+- Add new candidates during slice discovery sessions.
+- Move to "Recently Closed" when slice wiki article is compiled.
+- Update dependencies as exploration reveals new relationships.
