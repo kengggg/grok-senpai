@@ -59,6 +59,19 @@ for agent in claude codex; do
     --mode independent_review --task-id "rev-$agent" --chain "c-$agent" \
     --prompt-file "$PROMPT" --cwd "$WT" >/dev/null
   assert "matrix $agent implement+review launched" test -s "$WORKDIR/argv-$agent-rev.nul"
+  if python3 - "$ARGV" <<'PY'
+import sys
+parts=open(sys.argv[1],"rb").read().split(b"\0")
+parts=[p.decode() for p in parts if p]
+sys.exit(0 if "--prompt-file" not in parts else 1)
+PY
+  then
+    echo "PASS  $agent runner argv has no --prompt-file"
+    PASS=$((PASS+1))
+  else
+    echo "FAIL  $agent runner argv still has --prompt-file" >&2
+    FAIL=$((FAIL+1))
+  fi
 done
 assert "launch: matrix did not write runs/none" test ! -e "$PROJ/.grok/orchestration/runs/none"
 
@@ -82,7 +95,7 @@ assert "crash-resume: steal" test $? -eq 0
 # Real CLI probes (do not fail the suite; never start a live model session)
 echo
 echo "## Real CLI probes (UNKNOWN — not a merge gate)"
-echo "probe: helper launch still passes --prompt-file to both runners"
+echo "probe: helper launch feeds the stored prompt on stdin (no runner --prompt-file)"
 echo "probe: skill files exist after install (discovery fire still UNKNOWN)"
 assert "probe: project .claude/skills/senpai present" \
   test -f "$PROJ/.claude/skills/senpai/SKILL.md"
@@ -104,7 +117,7 @@ if command -v claude >/dev/null 2>&1; then
   _ce=$?
   set -e
   if grep -qi 'unknown option' "$WORKDIR/claude-pf.err"; then
-    echo "probe: claude rejects --prompt-file (UNKNOWN; helper still passes it)"
+    echo "probe: claude rejects --prompt-file (helper no longer passes it; uses --print + stdin)"
   else
     echo "probe: claude --prompt-file exit=${_ce} (UNKNOWN; $(head -1 "$WORKDIR/claude-pf.err"))"
   fi
@@ -130,7 +143,7 @@ if command -v codex >/dev/null 2>&1; then
   _xe=$?
   set -e
   if grep -qi 'unexpected argument' "$WORKDIR/codex-pf.err"; then
-    echo "probe: codex exec rejects --prompt-file (UNKNOWN; helper still passes it)"
+    echo "probe: codex exec rejects --prompt-file (helper no longer passes it; uses stdin / '-')"
   else
     echo "probe: codex exec --prompt-file exit=${_xe} (UNKNOWN; $(head -1 "$WORKDIR/codex-pf.err"))"
   fi

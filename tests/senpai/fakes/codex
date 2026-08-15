@@ -7,6 +7,11 @@ if [[ -n "${SENPAI_ARGV_OUT:-}" ]]; then
     printf '%s\0' "$a" >>"$SENPAI_ARGV_OUT"
   done
 fi
+if [[ -n "${SENPAI_STDIN_OUT:-}" ]]; then
+  cat >"$SENPAI_STDIN_OUT"
+elif [[ ! -t 0 ]]; then
+  cat >/dev/null
+fi
 if [[ -n "${SENPAI_FAKE_RESULT:-}" && -n "${SENPAI_FAKE_RESULT_SRC:-}" ]]; then
   cp "$SENPAI_FAKE_RESULT_SRC" "$SENPAI_FAKE_RESULT"
 fi
