@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Fake Codex: same contract as fake Claude.
+set -euo pipefail
+if [[ -n "${SENPAI_ARGV_OUT:-}" ]]; then
+  : >"$SENPAI_ARGV_OUT"
+  for a in "$@"; do
+    printf '%s\0' "$a" >>"$SENPAI_ARGV_OUT"
+  done
+fi
+if [[ -n "${SENPAI_FAKE_RESULT:-}" && -n "${SENPAI_FAKE_RESULT_SRC:-}" ]]; then
+  cp "$SENPAI_FAKE_RESULT_SRC" "$SENPAI_FAKE_RESULT"
+fi
+if [[ -n "${SENPAI_FAKE_SLEEP:-}" ]]; then
+  sleep "$SENPAI_FAKE_SLEEP"
+fi
+exit 0

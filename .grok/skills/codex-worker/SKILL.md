@@ -4,8 +4,8 @@ description: >
   Always runs inside a dedicated worktree. Defaults: Sol (gpt-5.6-sol) + effort ultra
   (overridable via Task Packet).
 
-You are the Codex worker called by the **grok-senpai** Grok orchestrator.
-Follow AGENTS.md playbook rules.
+You are the Codex **runner** called by a **grok-senpai** host session (Grok, Claude, or Codex).
+Follow AGENTS.md. The host must invoke you through `.grok/orchestration/senpai.sh launch` — never `eval`.
 
 ## Defaults (unless Task Packet overrides)
 
@@ -24,7 +24,7 @@ worker_effort: max          # or ultra, high, …
 
 If `policy.enforce_floors` is true, do not set effort below `min_effort_codex` (default `high`).
 
-Natural-language model/role phrases are orchestrator input, not worker input. Before invoking this skill, Grok resolves `.grok/orchestration/model-aliases.toml` and writes the friendly alias, concrete CLI model, effort, `role`, and `role_source` into the Task Packet. Do not launch with an unresolved or unknown alias.
+Natural-language model/role phrases are host input, not worker input. The host resolves `.grok/orchestration/model-aliases.toml` and writes the friendly alias, concrete CLI model, effort, `role`, and `role_source` into the Task Packet. Do not launch with an unresolved or unknown alias.
 
 ## Mandatory Process
 
@@ -49,99 +49,68 @@ Natural-language model/role phrases are orchestrator input, not worker input. Be
 - Keep the task tightly scoped. Do not expand scope.
 - Stop if you hit major ambiguity or the verification commands fail repeatedly.
 
-## Orchestrator-owned visibility
+## Host-owned visibility
 
-Grok launches the command in the background, captures worker I/O at `.grok/orchestration/logs/<task_id>.log`, records the PID in `state.md`, and polls about every 2 minutes (see AGENTS.md canonical log-capture launch). The worker should emit its normal output and final Result Packet; it does **not** write progress files or self-heartbeats.
-
-Wrap every invoke with log capture (example):
-
-```bash
-TASK_ID="<task_id>"
-LOG=".grok/orchestration/logs/${TASK_ID}.log"
-mkdir -p "$(dirname "$LOG")"
-( cd "<Worktree Path>" && <codex-exec-command> ) >"$LOG" 2>&1 &
-WORKER_PID=$!
-# Write WORKER_PID + LOG into state.md before the first heartbeat.
-```
+The senpai host launches through `.grok/orchestration/senpai.sh`. The helper records PID and logs. Do **not** `eval` and do **not** record `tee … &` as the worker PID.
 
 ## Recommended Commands
-
-Resolve defaults first:
 
 ```bash
 MODEL="${WORKER_MODEL:-gpt-5.6-sol}"
 EFFORT="${WORKER_EFFORT:-ultra}"
+
+.grok/orchestration/senpai.sh launch \
+  --agent codex \
+  --mode implementation \
+  --task-id "<task_id>" \
+  --chain "<task_id>" \
+  --prompt-file "<prompt-file>" \
+  --cwd "<Worktree Path>" \
+  --model "$MODEL" \
+  --effort "$EFFORT"
 ```
 
-Implementation (foreground body; wrap with log capture above for production):
+Review (new session; helper adds `--sandbox read-only`):
 
 ```bash
-cd "<Worktree Path>" && codex exec \
-  -m "$MODEL" \
-  -c model_reasoning_effort="$EFFORT" \
-  --sandbox workspace-write \
-  "<Task Packet + acceptance criteria. After success: write Review Packet at .grok/orchestration/reviews/<task_id>.md per REVIEW_PACKET.template.md (intent, bullets, git diff --stat, verification, risks, reviewer checklist). Then emit Result Packet only.>"
-```
-
-Review:
-
-```bash
-cd "<Worktree Path>" && codex exec \
-  -m "$MODEL" \
-  -c model_reasoning_effort="$EFFORT" \
-  --sandbox read-only \
-  "You are the independent reviewer. Use the Task Packet AND Review Packet. Focus on checklist items, correctness, edge cases, security, missing tests, scope deviations. Do not implement features. Output a Result Packet with findings (Findings section or findings[])."
-```
-
-**Default one-liners (no overrides; still wrap with log capture in production):**
-
-```bash
-codex exec -m gpt-5.6-sol -c model_reasoning_effort=ultra --sandbox workspace-write "..." \
-  2>&1 | tee -a ".grok/orchestration/logs/<task_id>.log"
-codex exec -m gpt-5.6-sol -c model_reasoning_effort=ultra --sandbox read-only "..." \
-  2>&1 | tee -a ".grok/orchestration/logs/<task_id>.log"
+.grok/orchestration/senpai.sh launch \
+  --agent codex \
+  --mode independent_review \
+  --task-id "<task_id>" \
+  --chain "<parent-chain>" \
+  --prompt-file "<prompt-file>" \
+  --cwd "<Worktree Path>" \
+  --model "$MODEL" \
+  --effort "$EFFORT"
 ```
 
 ## Required Output Format (Result Packet)
 
+Emit framed JSON (one schema for every agent). Versionless structured-text Results are legacy only.
+
+```json
+{
+  "protocol_version": 2,
+  "task_id": "...",
+  "attempt": 1,
+  "status": "success | partial | failed",
+  "agent": "codex",
+  "mode": "implementation | independent_review",
+  "role": "dev | review",
+  "role_source": "default_routing | human_override",
+  "summary": "...",
+  "files_changed": [],
+  "tests_run": [{"command": "...", "outcome": "pass | fail", "notes": ""}],
+  "confidence": 4,
+  "open_questions": [],
+  "risks": [],
+  "recommended_next_action": "needs_review",
+  "findings": [],
+  "worker_model_alias": "sol",
+  "worker_model": "gpt-5.6-sol",
+  "worker_effort": "ultra"
+}
 ```
-Result Packet
-Task ID: <same>
-Status: success | partial | failed
-Agent: codex
-Mode: implementation | independent_review
-Role: dev | review
-Role Source: default_routing | human_override
-Worktree Path: ...
-Branch: ...
-Worker Model Alias: sol
-Worker Model: gpt-5.6-sol
-Worker Effort: ultra
-Summary
-<2-5 sentences>
-Files Changed
-
-path (added|modified|deleted)
-
-Tests & Verification
-
-Command: ... → pass | fail
-Notes: ...
-
-Confidence
-<1-5> (short justification)
-Open Questions / Risks
-
-...
-
-Findings (independent_review; omit or empty for implementation)
-- [blocker|major|minor|nit] title — detail
-
-Recommended Next Action
-merge | needs_review | iterate | discard | escalate_to_human
-```
-
-Always end your response with the Result Packet. Nothing after it.
 
 Also see `.grok/orchestration/RESULT_PACKET.template.md`.
 
@@ -150,4 +119,4 @@ Also see `.grok/orchestration/RESULT_PACKET.template.md`.
 - Never edit outside the assigned worktree.
 - Never omit `-m` / `model_reasoning_effort` (do not rely on global Codex config alone).
 - Implementation without a Review Packet for non-trivial work is incomplete.
-- Treat this as a proposal only. The grok-senpai orchestrator will perform independent review and enforce merge gates from AGENTS.md.
+- Treat this as a proposal only. The senpai host will perform independent review and enforce merge gates from AGENTS.md.

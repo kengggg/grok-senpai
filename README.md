@@ -2,7 +2,7 @@
 
 ![grok-senpai cover](docs/cover.jpg)
 
-**Multi-agent orchestration template for [Grok Build](https://x.ai/)** — orchestrate **Claude Code** and **Codex CLI** as specialized workers with isolated worktrees, Task Packets, Result Packets, live progress heartbeats, and hard merge gates.
+**Multi-agent orchestration template** — senpai is a session role. Grok Build is the default/proven host; Claude Code and Codex CLI can host experimentally. Workers stay Claude and Codex, launched only through `.grok/orchestration/senpai.sh` (no `eval`).
 
 GitHub: [kengggg/grok-senpai](https://github.com/kengggg/grok-senpai)
 
@@ -14,12 +14,21 @@ Solo agents blur planning, coding, and review. **grok-senpai** makes the workflo
 
 | Role | Who |
 |------|-----|
-| Orchestrator | Grok Build |
+| Senpai host (default) | Grok Build |
 | Deep reasoning / architecture / adversarial review | Claude Code (`claude-worker`) |
 | Scoped implementation / mechanical review | Codex CLI (`codex-worker`) |
 | Simple independent slices | Grok subagents |
 
 Every non-trivial change is a **proposal** until verification, cross-model review, and human approval. See **[AGENTS.md](./AGENTS.md)** for the full playbook, or **[docs/design-model-roles-visibility.md](./docs/design-model-roles-visibility.md)** for model selection, roles, and visibility design.
+
+## Tests
+
+```bash
+bash tests/senpai/run.sh
+bash tests/senpai/conformance.sh
+```
+
+Fake runners only. No live model usage.
 
 ## Prerequisites
 
@@ -34,11 +43,14 @@ Every non-trivial change is a **proposal** until verification, cross-model revie
 grok-senpai/
 ├── .grok/
 │   ├── skills/
+│   │   ├── senpai/
+│   │   │   └── SKILL.md
 │   │   ├── claude-worker/
 │   │   │   └── SKILL.md
 │   │   └── codex-worker/
 │   │       └── SKILL.md
 │   └── orchestration/
+│       ├── senpai.sh
 │       ├── state.md
 │       ├── worker-config.toml           # model + effort defaults (Fable/high, Sol/ultra)
 │       ├── worker-config.example.toml
@@ -105,7 +117,9 @@ cp -R path/to/grok-senpai/.grok .
 
 ### What gets installed
 
-- `.grok/skills/` — `claude-worker`, `codex-worker` (**always refreshed** on re-run)
+- `.grok/skills/` — `senpai`, `claude-worker`, `codex-worker` (**always refreshed** on re-run)
+- `.agents/skills/senpai/` and `.claude/skills/senpai/` — native host discovery copies
+- `.grok/orchestration/senpai.sh` — pack-floor helper
 - `.grok/orchestration/` — Task/Result/**Review** packet templates + config/alias examples (refreshed)
 - `worker-config.toml` — created once with defaults; **not overwritten** on re-run
 - `model-aliases.toml` — created once with friendly aliases; **not overwritten** on re-run

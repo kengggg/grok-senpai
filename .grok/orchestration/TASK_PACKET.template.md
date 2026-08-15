@@ -3,11 +3,23 @@
 Copy this file (or paste into the worker prompt) when launching a **claude-worker** or **codex-worker**. See **AGENTS.md** for gates, routing, and thinking-level policy.
 
 ```yaml
+# v2 fields. Missing keys default: host=grok; created_by=grok-senpai-orchestrator.
+# Explicit malformed v2 (protocol_version set but invalid) must fail closed.
+protocol_version: 2                 # optional; omit for versionless v1
 task_id: <short-id>                 # e.g. feat-auth-001
-agent: codex | claude
+host: grok | claude | codex         # senpai session; default grok
+executor:
+  agent_id: claude | codex
+  adapter: claude-code | codex-cli
+agent: codex | claude               # v1 alias of executor.agent_id
 mode: implementation | independent_review
-role: dev | review                  # human-facing role; maps to mode
+role: dev | review                  # registry-open; extras such as debater allowed
 role_source: default_routing | human_override
+run_id: <minted by senpai.sh>       # do not invent; helper mints
+attempt: 1
+session_id: <host session>
+parent_run_id: <optional>
+max_delegation_depth: 0             # runners cannot mint
 worktree_path: <absolute path>      # required isolated worktree for non-trivial work
 branch: orch/<short-task>-<agent>
 created_by: grok-senpai-orchestrator
@@ -45,7 +57,7 @@ constraints:
   - Stay strictly inside the worktree
   - Prefer minimal, high-quality changes
   - Do not expand scope
-  - Treat output as a proposal; grok-senpai orchestrator reviews independently
+  - Treat output as a proposal; the senpai host reviews independently
 
 deliverables:
   - <files / Result Packet>

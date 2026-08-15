@@ -4,6 +4,14 @@
 !.grok/orchestration/reviews/.gitkeep
 .grok/orchestration/logs/*
 !.grok/orchestration/logs/.gitkeep
+.grok/orchestration/journal.jsonl
+.grok/orchestration/locks/
+.grok/orchestration/runs/
+.grok/orchestration/results/
+.grok/orchestration/prompts/
+.grok/orchestration/state.generated.md
+.grok/orchestration/state.md.pre-v2
+.grok/orchestration/sot
 .grok/orchestration/TASK_*.md
 
 # Python
