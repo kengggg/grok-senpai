@@ -223,7 +223,7 @@ parse Result Packet on exit → continue the existing gates
 2. Create an isolated worktree (`orch/<short-task>-<agent>`); record it in `state.md`.
 3. Resolve natural-language model/effort and any role override; write a complete Task Packet and echo the Launch plan.
 4. Launch the matching worker skill **only inside that worktree**, capture its output, and maintain ~2-minute heartbeats until it exits.
-5. Collect the Result Packet; confirm verification passed inside the worktree.
+5. Collect the Result Packet; confirm verification passed inside the worktree. Record `usage.senpai` and `usage.worker` (`uncached_input`, `cache_read`, `cache_write`, `reasoning`, `output`, `cost`) on the same run ledger.
 6. Write a **Review Packet** (template + diff summary) for non-trivial tasks.
 7. Launch independent review with a **different model** in a dedicated review setup (read-only; same worktree OK if read-only, or a fresh worktree checkout of the branch). Pass Task Packet + Review Packet + diff.
 8. Present the final diff (and review findings) to the human; merge only after approval; clean up the worktree.
