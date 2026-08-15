@@ -331,6 +331,7 @@ for _c in bash sh date mkdir printf cat awk sed kill stat cksum wc tr git mktemp
     ln -s "$_src" "$NOPY/$_c"
   fi
 done
+hash -r
 assert "usage: nopy PATH hides python3" test -z "$(PATH="$NOPY" command -v python3 || true)"
 RESNP="$WORKDIR/res-nopy.json"
 echo '{"task_id":"t-nopy","status":"success"}' >"$RESNP"
@@ -395,8 +396,13 @@ LOCKR="$PROJ/.grok/orchestration/locks/lock-reuse"
 echo $$ >"$LOCKR/pid"
 echo old-token-reuse >"$LOCKR/start_token"
 echo NOT-THE-STARTTIME >"$LOCKR/pid_start"
-"$SENPAI" lock --chain lock-reuse >/dev/null
-assert "lock: steal on PID reuse (start_token read)" test $? -eq 0
+if "$SENPAI" lock --chain lock-reuse >/dev/null; then
+  echo "PASS  lock: steal on PID reuse (start_token read)"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL  lock: steal on PID reuse (start_token read)" >&2
+  FAIL=$((FAIL + 1))
+fi
 assert "lock: start_token replaced after reuse steal" \
   test "$(cat "$LOCKR/start_token")" != "old-token-reuse"
 if sed -n '/^cmd_lock()/,/^cmd_mint()/p' "$SENPAI" | grep -q 'rm -rf "$d"'; then

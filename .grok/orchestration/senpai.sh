@@ -133,8 +133,9 @@ pid_alive() {
 }
 
 # Starttime distinguishes a recorded holder from a later process that reused the PID.
+# Linux: /proc starttime (clock ticks). Elsewhere (Darwin): ps lstart.
 pid_starttime() {
-  local pid="$1"
+  local pid="$1" out
   [[ -n "$pid" ]] || return 1
   if [[ -r "/proc/${pid}/stat" ]]; then
     awk '{
@@ -145,7 +146,9 @@ pid_starttime() {
     }' "/proc/${pid}/stat"
     return 0
   fi
-  return 1
+  out="$(ps -p "$pid" -o lstart= 2>/dev/null | awk '{$1=$1; print}')"
+  [[ -n "$out" ]] || return 1
+  printf '%s\n' "$out"
 }
 
 pid_is_holder() {
