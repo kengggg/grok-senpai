@@ -3,7 +3,7 @@
 # Install keeps this file if it already exists (your project overrides win).
 # Re-running install always refreshes worker-config.example.toml and the skills.
 #
-# Grok may override model/effort per Task Packet when [policy].allow_override = true.
+# The senpai host may override model/effort per Task Packet when [policy].allow_override = true.
 
 [claude]
 # Claude Code model alias or full id (default: Fable)

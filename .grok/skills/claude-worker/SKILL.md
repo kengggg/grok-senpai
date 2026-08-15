@@ -4,8 +4,9 @@ description: >
   planning, and independent review in grok-senpai. Always runs headlessly inside
   a dedicated worktree. Defaults: Claude Fable + effort high (overridable via Task Packet).
 
-You are launching Claude Code as a specialized deep-reasoning worker under the
-**grok-senpai** Grok orchestrator. Follow AGENTS.md playbook rules.
+You are launching Claude Code as a specialized deep-reasoning **runner** under a
+**grok-senpai** host session (Grok, Claude, or Codex). Follow AGENTS.md. The host
+must invoke you through `.grok/orchestration/senpai.sh launch` — never `eval`.
 
 ## Defaults (unless Task Packet overrides)
 
@@ -24,7 +25,7 @@ worker_effort: high         # optional override (see AGENTS.md effort routing)
 
 If `policy.enforce_floors` is true, do not set effort below `min_effort_claude` (default `high`).
 
-Natural-language model/role phrases are orchestrator input, not worker input. Before invoking this skill, Grok resolves `.grok/orchestration/model-aliases.toml` and writes the friendly alias, concrete CLI model, effort, `role`, and `role_source` into the Task Packet. Do not launch with an unresolved or unknown alias.
+Natural-language model/role phrases are host input, not worker input. The host resolves `.grok/orchestration/model-aliases.toml` and writes the friendly alias, concrete CLI model, effort, `role`, and `role_source` into the Task Packet. Do not launch with an unresolved or unknown alias.
 
 ## Preconditions
 
@@ -49,96 +50,43 @@ If not isolated and the Task Packet did not mark `allow_primary_checkout: true`,
 
 Always use headless mode with safety rails. **Always pass model + effort explicitly.**
 
-### Orchestrator-owned visibility
+### Host-owned visibility
 
-Grok launches the command in the background, captures worker I/O at `.grok/orchestration/logs/<task_id>.log`, records the PID in `state.md`, and polls about every 2 minutes (see AGENTS.md canonical log-capture launch). The worker should emit its normal output and final Result Packet; it does **not** write progress files or self-heartbeats.
+The senpai host launches through `.grok/orchestration/senpai.sh`. The helper records PID, prompt path, and logs. The worker emits its normal output and a framed JSON Result; it does **not** write progress files or self-heartbeats. Do **not** `eval` a command string and do **not** record `tee … &` as the worker PID.
 
-Wrap every invoke with log capture (example):
+### Implementation mode (runner contract)
 
-```bash
-TASK_ID="<task_id>"
-LOG=".grok/orchestration/logs/${TASK_ID}.log"
-mkdir -p "$(dirname "$LOG")"
-# ... set MODEL/EFFORT and run the mode-specific command below as WORKER_CMD ...
-( cd "<Worktree Path>" && eval "$WORKER_CMD" ) >"$LOG" 2>&1 &
-WORKER_PID=$!
-# Write WORKER_PID + LOG into state.md before the first heartbeat.
-```
-
-### Implementation mode
+Write the Task Packet to a prompt file, then:
 
 ```bash
-MODEL="${WORKER_MODEL:-fable}"
-EFFORT="${WORKER_EFFORT:-high}"
-
-WORKER_CMD=$(cat <<CMD
-claude \
-  --model "$MODEL" \
-  --effort "$EFFORT" \
-  -p "$(cat <<'EOF'
-[Insert full Task Packet here]
-Additional instructions:
-
-First read AGENTS.md / CLAUDE.md if present.
-Stay strictly within the stated scope and acceptance criteria.
-Prefer minimal, high-quality changes that follow existing patterns.
-Run the verification_commands listed in the Task Packet.
-When finished, write a Review Packet to .grok/orchestration/reviews/<task_id>.md
-(see REVIEW_PACKET.template.md) including git status, git diff --stat, and verification table.
-Then output ONLY a Result Packet in the exact format below.
-Do not add extra commentary outside the packet.
-EOF
-)" \
-  --output-format json \
-  --max-turns 40 \
-  --permission-mode acceptEdits \
-  --allowedTools "Read,Edit,Write,Bash,Glob,Grep"
-CMD
-)
-# Prefer the canonical log-capture launch from AGENTS.md (background + LOG + PID).
-# Foreground (debug only):
-# cd "<Worktree Path>" && eval "$WORKER_CMD" 2>&1 | tee -a ".grok/orchestration/logs/<task_id>.log"
+.grok/orchestration/senpai.sh launch \
+  --agent claude \
+  --mode implementation \
+  --task-id "<task_id>" \
+  --chain "<task_id>" \
+  --prompt-file "<prompt-file>" \
+  --cwd "<Worktree Path>" \
+  --model "${WORKER_MODEL:-fable}" \
+  --effort "${WORKER_EFFORT:-high}"
 ```
+
+The helper builds argv (no eval). Implementation uses `--permission-mode acceptEdits` and write tools. After exit, `collect` a framed JSON Result (see template). Write a Review Packet for non-trivial work.
 
 ### Independent review mode (read-only intent)
 
 ```bash
-MODEL="${WORKER_MODEL:-fable}"
-EFFORT="${WORKER_EFFORT:-high}"
-
-WORKER_CMD=$(cat <<CMD
-claude \
-  --model "$MODEL" \
-  --effort "$EFFORT" \
-  -p "$(cat <<'EOF'
-[Insert Task Packet + full Review Packet here]
-Additional instructions:
-
-You are the independent reviewer (opposite model of the implementer).
-Do NOT implement features. Prefer not to edit production code.
-Read the Review Packet, run git diff / listed verification if needed.
-Focus on the reviewer checklist in the Review Packet.
-When finished, output ONLY a Result Packet including findings[] (see template).
-EOF
-)" \
-  --output-format json \
-  --max-turns 40 \
-  --permission-mode acceptEdits \
-  --allowedTools "Read,Bash,Glob,Grep"
-CMD
-)
-# Prefer the canonical log-capture launch from AGENTS.md (background + LOG + PID).
+.grok/orchestration/senpai.sh launch \
+  --agent claude \
+  --mode independent_review \
+  --task-id "<task_id>" \
+  --chain "<parent-chain>" \
+  --prompt-file "<prompt-file>" \
+  --cwd "<Worktree Path>" \
+  --model "${WORKER_MODEL:-fable}" \
+  --effort "${WORKER_EFFORT:-high}"
 ```
 
-**Default one-liner (no overrides; still wrap with log capture in production):**
-
-```bash
-cd "<Worktree Path>" && claude --model fable --effort high -p "..." \
-  --output-format json --max-turns 40 \
-  --permission-mode acceptEdits \
-  --allowedTools "Read,Edit,Write,Bash,Glob,Grep" \
-  2>&1 | tee -a ".grok/orchestration/logs/<task_id>.log"
-```
+Review argv has no `acceptEdits` and no Edit/Write tools. You are the independent reviewer (distinct session from the implementer). Do NOT implement features. Output a framed JSON Result including `findings`.
 
 ## Required Result Packet Format
 
@@ -166,7 +114,17 @@ Return a structured Result Packet (JSON preferred):
   ],
   "worker_model_alias": "fable",
   "worker_model": "fable",
-  "worker_effort": "high"
+  "worker_effort": "high",
+  "usage": {
+    "worker": {
+      "uncached_input": 0,
+      "cache_read": 0,
+      "cache_write": 0,
+      "reasoning": 0,
+      "output": 0,
+      "cost": 0
+    }
+  }
 }
 ```
 
@@ -181,4 +139,4 @@ Also see `.grok/orchestration/RESULT_PACKET.template.md`.
 - Implementation success without a Review Packet for non-trivial tasks is incomplete — write the Review Packet before finishing.
 - If the task is ambiguous or out of scope, stop and return `partial` / `failed` with clear `open_questions`.
 - Always prefer reading existing patterns over inventing new ones.
-- Treat this as a proposal only. The grok-senpai orchestrator will perform independent review and enforce merge gates from AGENTS.md.
+- Treat this as a proposal only. The senpai host will perform independent review and enforce merge gates from AGENTS.md.

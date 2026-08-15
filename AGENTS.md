@@ -1,14 +1,15 @@
 # grok-senpai
 
-**grok-senpai** is a reusable multi-agent orchestration template for Grok Build.
+**grok-senpai** is a reusable multi-agent orchestration template.
 
-Copy this pack into any project (or start from this repo) so Grok can orchestrate **Claude Code** and **Codex CLI** workers in isolated worktrees with explicit Task Packets, Result Packets, and merge gates.
+**Senpai** is a *session role* (the session that holds the task-chain lease and the human-approval conversation), not a product or model name. Grok Build is the default and proven host. Claude Code and Codex CLI can be senpai hosts via native skills (experimental until conformance). Workers stay Claude Code and Codex CLI, launched only through `.grok/orchestration/senpai.sh`.
 
 | Role | Who | Skill |
 |------|-----|--------|
-| Orchestrator | Grok Build | — |
-| Deep reasoning / architecture / high-stakes review | Claude Code | `.grok/skills/claude-worker/` |
-| Scoped implementation / mechanical review | Codex CLI | `.grok/skills/codex-worker/` |
+| Senpai host (default / proven) | Grok Build | `.grok/skills/senpai/` |
+| Senpai host (experimental) | Claude Code / Codex CLI | `.claude/skills/senpai/` · `.agents/skills/senpai/` |
+| Deep reasoning / architecture / high-stakes review | Claude Code runner | `.grok/skills/claude-worker/` |
+| Scoped implementation / mechanical review | Codex CLI runner | `.grok/skills/codex-worker/` |
 | Simple independent slices | Grok subagents | builtin |
 
 Application code lives in *your* project. This template provides the playbook, worker skills, and orchestration state — plus an optional worked example under `examples/`.
@@ -18,10 +19,12 @@ Application code lives in *your* project. This template provides the playbook, w
 ## Multi-Agent Orchestration Playbook (Grok + Claude + Codex)
 
 ### Core Principles
-- Grok Build is the single orchestrator. Always start non-trivial work in Plan Mode.
+- Senpai is the orchestration role of a session. Grok Build is the default/proven host; Codex and Claude hosts are experimental until conformance.
+- Always start non-trivial work in Plan Mode (Grok host addendum; other hosts plan before launching workers).
 - Prefer model diversity: Claude Code for deep reasoning / architecture; Codex CLI for scoped implementation and independent review; Grok subagents for simple independent pieces.
-- Isolation first: every parallel or non-trivial task runs in its own Grok-native worktree.
-- Treat every agent output as a proposal. Never merge without verification.
+- Isolation first: every parallel or non-trivial task runs in its own linked worktree (`git-dir` ≠ `git-common-dir`).
+- Treat every agent output as a proposal. Never merge without verification, a matching tree snapshot, and human approval.
+- Launch workers only through `.grok/orchestration/senpai.sh`. Never `eval` a composed command string. Never record `tee … &` as the worker PID.
 
 ### Routing Decision Table
 
@@ -30,8 +33,8 @@ Application code lives in *your* project. This template provides the playbook, w
 | Architecture, complex multi-file, high-stakes reasoning | Claude Code | Deep coherence |
 | Well-scoped implementation, mechanical changes, tests | Codex CLI | Fast + precise |
 | Simple independent piece | Grok subagent | Lowest overhead |
-| Independent code review | Opposite model of the implementer | Different training distribution |
-| Final integration / merge decision | Grok | After all gates pass |
+| Independent code review | Distinct session; prefer a different provider than the implementer (not than the host) | Review diversity |
+| Final integration / merge decision | Human + the senpai host that holds the lease | After all gates pass |
 
 ### Mandatory Gates (before any merge)
 1. Complete Task Packet
@@ -63,7 +66,9 @@ After a successful **implementation** Result Packet, produce a **Review Packet**
 The reviewer must receive: **Task Packet + Review Packet + read-only worktree/diff**. Do not ask a reviewer to “just look at the branch” without a Review Packet.
 
 - Templates: `.grok/orchestration/TASK_PACKET.template.md`, `.grok/orchestration/RESULT_PACKET.template.md`, `.grok/orchestration/REVIEW_PACKET.template.md`
+- Host skill: `.grok/skills/senpai/` (also installed to `.agents/skills/senpai/` and `.claude/skills/senpai/`)
 - Worker skills: `.grok/skills/claude-worker/`, `.grok/skills/codex-worker/`
+- Helper: `.grok/orchestration/senpai.sh`
 - Worker defaults: `.grok/orchestration/worker-config.toml`
 - Active tracking: `.grok/orchestration/state.md`
 
@@ -78,7 +83,7 @@ The reviewer must receive: **Task Packet + Review Packet + read-only worktree/di
 
 Configured in `.grok/orchestration/worker-config.toml`. Skills must pass these flags **explicitly** on every invoke (do not rely on the user's global CLI defaults).
 
-**Grok may override** via Task Packet when `[policy].allow_override = true`:
+**The senpai host may override** via Task Packet when `[policy].allow_override = true`:
 
 ```yaml
 worker_model: fable           # concrete CLI id; claude example
@@ -165,33 +170,24 @@ Grok owns progress visibility; workers do not need to write progress files or em
 
 1. Before launch, create `.grok/orchestration/logs/<task_id>.log` and a `state.md` row containing the resolved role, model, effort, worktree, branch, start time, log path, and (after launch) PID.
 2. Launch the worker as a background job and capture its stdout/stderr into that log so Grok remains interactive. Use the **canonical log-capture launch** below (or equivalent).
-3. Poll once immediately after launch, approximately every **2 minutes** while the process is alive, and once on exit. A human asking “status?” triggers an immediate poll.
+3. Poll once immediately after launch, on a host-local cadence while the process is alive, and once on exit. Grok’s default cadence is ~2 minutes. Every host must also poll on each turn and before every gate. A human asking “status?” triggers an immediate poll. Mark `stalled?` only after two unchanged polls **and** at least 4 minutes.
 4. Poll only observable signals: process state (`kill -0 $PID` or equivalent), a redacted non-empty worker-I/O log tail, `git status -sb`, and `git diff --stat` in the assigned worktree.
 5. Post a short heartbeat to chat and update the same `state.md` row on every poll. On exit, record `done`/`failed`, the final signal, and the Result Packet.
 
-#### Canonical log-capture launch
+#### Canonical launch (helper)
 
 ```bash
-TASK_ID="<task_id>"
-LOG=".grok/orchestration/logs/${TASK_ID}.log"
-mkdir -p "$(dirname "$LOG")"
-# Replace <worker-command> with the full claude/codex invoke from the worker skill.
-# Prefer tee so the log grows while you can still stream when attached.
-(
-  cd "<Worktree Path>" && <worker-command>
-) >"$LOG" 2>&1 &
-WORKER_PID=$!
-# Record WORKER_PID + LOG in state.md (PID column + Log column) before the first heartbeat.
+.grok/orchestration/senpai.sh launch \
+  --agent claude \
+  --mode implementation \
+  --task-id "<task_id>" \
+  --chain "<task_id>" \
+  --prompt-file "<prompt-file>" \
+  --cwd "<Worktree Path>"
+# prints the worker PID. Do not use tee … & — that PID is the pipeline.
 ```
 
-Equivalent one-liner form (when the shell already has cwd set):
-
-```bash
-<worker-command> 2>&1 | tee -a ".grok/orchestration/logs/<task_id>.log" &
-WORKER_PID=$!
-```
-
-Do **not** launch workers only in the foreground without a log path when heartbeats are expected — the log is the primary signal for phase heuristics.
+Do **not** `eval` a composed command. Do **not** put packet bytes on argv when the prompt is large — the helper switches to `--prompt-file`.
 
 Heartbeat format:
 
@@ -205,7 +201,7 @@ blocker: none | <short>
 next ping: ~2m
 ```
 
-Keep heartbeats to roughly 6–10 lines. Infer `starting` before meaningful output, `running` when logs/files change, `testing` from verification activity, and `finishing` from Result Packet-like output. Mark `stalled?` only after neither log nor git signals change for two consecutive pings (about 4 minutes). Raw logs are gitignored and may contain sensitive output; redact before copying a signal into chat or `state.md`.
+Keep heartbeats to roughly 6–10 lines. Infer `starting` before meaningful output, `running` when logs/files change, `testing` from verification activity, and `finishing` from Result Packet-like output. Mark `stalled?` only after two unchanged polls **and** ≥4 minutes. Raw logs are gitignored and may contain sensitive output; redact before copying a signal into chat or `state.md`.
 
 The orchestrator loop is:
 
@@ -220,14 +216,14 @@ parse Result Packet on exit → continue the existing gates
 
 ### Roles
 - **Human:** States goals in plain language; approves or rejects final diffs. Does **not** manually drive worktrees, packets, or worker selection.
-- **Grok (orchestrator):** Owns the full loop below for every non-trivial task. This file is your operating manual.
+- **Senpai host:** Owns the full loop below for every non-trivial task. Grok is the proven host. This file is your operating manual.
 
-### How Grok runs a task
+### How the senpai host runs a task
 1. Confirm the repo is git-backed (worktrees require git).
 2. Create an isolated worktree (`orch/<short-task>-<agent>`); record it in `state.md`.
 3. Resolve natural-language model/effort and any role override; write a complete Task Packet and echo the Launch plan.
 4. Launch the matching worker skill **only inside that worktree**, capture its output, and maintain ~2-minute heartbeats until it exits.
-5. Collect the Result Packet; confirm verification passed inside the worktree.
+5. Collect the Result Packet; confirm verification passed inside the worktree. Record `usage.senpai` and `usage.worker` (`uncached_input`, `cache_read`, `cache_write`, `reasoning`, `output`, `cost`) on the same run ledger.
 6. Write a **Review Packet** (template + diff summary) for non-trivial tasks.
 7. Launch independent review with a **different model** in a dedicated review setup (read-only; same worktree OK if read-only, or a fresh worktree checkout of the branch). Pass Task Packet + Review Packet + diff.
 8. Present the final diff (and review findings) to the human; merge only after approval; clean up the worktree.

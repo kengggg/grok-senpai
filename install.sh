@@ -23,6 +23,11 @@ REPO_SLUG="kengggg/grok-senpai"
 REF="${GROK_SENPAI_REF:-main}"
 
 TARGET_ARG="${1:-.}"
+if [[ "$TARGET_ARG" == --* ]]; then
+  echo "error: installer does not take flags; pass a target directory (got ${TARGET_ARG})" >&2
+  echo "hint: --host is reserved until option parsing lands; today \$1 is the target path" >&2
+  exit 1
+fi
 if [[ ! -d "$TARGET_ARG" ]]; then
   echo "error: target directory does not exist: $TARGET_ARG" >&2
   exit 1
@@ -117,31 +122,115 @@ build_playbook_block() {
   printf '\n%s\n' "$MARKER_END"
 }
 
+ensure_ignore_line() {
+  local ignore_file="$1" pattern="$2"
+  if ! grep -qxF "$pattern" "$ignore_file"; then
+    printf '%s\n' "$pattern" >>"$ignore_file"
+    return 0
+  fi
+  return 1
+}
+
 ensure_logs_ignored() {
   local ignore_file="${TARGET}/.gitignore"
-  local logs_pattern=".grok/orchestration/logs/*"
-  local keep_pattern="!.grok/orchestration/logs/.gitkeep"
   local changed=false
 
   if [[ ! -f "$ignore_file" ]]; then
     : > "$ignore_file"
   fi
-  if ! grep -qxF "$logs_pattern" "$ignore_file"; then
-    [[ -s "$ignore_file" ]] && printf '\n' >> "$ignore_file"
-    printf '%s\n' "$logs_pattern" >> "$ignore_file"
-    changed=true
-  fi
-  if ! grep -qxF "$keep_pattern" "$ignore_file"; then
-    # Keep keep-rule adjacent to logs_pattern (no extra blank when only this is missing).
-    printf '%s\n' "$keep_pattern" >> "$ignore_file"
-    changed=true
-  fi
+  [[ -s "$ignore_file" ]] || true
+  local p
+  for p in \
+    ".grok/orchestration/logs/*" \
+    "!.grok/orchestration/logs/.gitkeep" \
+    ".grok/orchestration/journal.jsonl" \
+    ".grok/orchestration/ledger.jsonl" \
+    ".grok/orchestration/locks/" \
+    ".grok/orchestration/runs/" \
+    ".grok/orchestration/results/" \
+    ".grok/orchestration/prompts/" \
+    ".grok/orchestration/state.generated.md"
+  do
+    if ensure_ignore_line "$ignore_file" "$p"; then
+      changed=true
+    fi
+  done
 
   if [[ "$changed" == true ]]; then
-    summary "Added worker-log rules to .gitignore"
+    summary "Added helper/journal ignore rules to .gitignore"
   else
-    summary "Kept existing worker-log rules in .gitignore"
+    summary "Kept existing helper/journal ignore rules in .gitignore"
   fi
+}
+
+helper_checksum() {
+  cksum "${SOURCE_GROK}/orchestration/senpai.sh" | awk '{print $1}'
+}
+
+is_managed_skill() {
+  local f="$1"
+  [[ -f "$f" ]] && grep -q '<!-- senpai-managed:checksum=' "$f"
+}
+
+preflight() {
+  local dest skill
+  if [[ -z "${GROK_SENPAI_FORCE:-}" && -f "${TARGET}/.grok/orchestration/state.md" ]]; then
+    local pid
+    while IFS= read -r pid; do
+      if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+        echo "error: live worker pid $pid recorded in state.md; refuse to overwrite (GROK_SENPAI_FORCE=1 to override)" >&2
+        exit 1
+      fi
+    done < <(awk -F'|' 'NR>3 { pid=$16; gsub(/ /,"",pid); if (pid ~ /^[0-9]+$/) print pid }' \
+      "${TARGET}/.grok/orchestration/state.md")
+  fi
+
+  for dest in \
+    "${TARGET}/.grok/skills/senpai/SKILL.md" \
+    "${TARGET}/.agents/skills/senpai/SKILL.md" \
+    "${TARGET}/.claude/skills/senpai/SKILL.md"
+  do
+    if [[ -e "$dest" ]] && ! is_managed_skill "$dest"; then
+      echo "error: unowned skill at $dest (missing senpai-managed marker); aborting with no writes" >&2
+      exit 1
+    fi
+  done
+}
+
+install_senpai_skills() {
+  local sum src dest dests
+  [[ -f "${SOURCE_GROK}/orchestration/senpai.sh" ]] || return 0
+  sum="$(helper_checksum)"
+  src="${SOURCE_GROK}/skills/senpai/SKILL.md"
+  [[ -f "$src" ]] || return 0
+  dests=(
+    "${TARGET}/.grok/skills/senpai/SKILL.md"
+    "${TARGET}/.agents/skills/senpai/SKILL.md"
+    "${TARGET}/.claude/skills/senpai/SKILL.md"
+  )
+  local d
+  for d in "${dests[@]}"; do
+    mkdir -p "$(dirname "$d")"
+    sed "s/checksum=HELPER/checksum=${sum}/g; s/checksum=[A-Za-z0-9]*/checksum=${sum}/" \
+      "$src" >"$d"
+  done
+  summary "Installed senpai host skill at three discovery roots (checksum ${sum})"
+}
+
+ensure_claude_md() {
+  local claude="${TARGET}/CLAUDE.md"
+  if [[ -f "$claude" ]]; then
+    summary "Kept existing CLAUDE.md"
+    return 0
+  fi
+  cat >"$claude" <<'EOF'
+# CLAUDE.md
+
+This project uses **grok-senpai**. The canonical playbook lives in `AGENTS.md`.
+
+Claude Code may be the senpai **host** (experimental until conformance) via `.claude/skills/senpai/`, or a **worker** via `.grok/skills/claude-worker/`. Launch workers only through `.grok/orchestration/senpai.sh` — never `eval`.
+EOF
+  summary "Created CLAUDE.md pointing at AGENTS.md"
 }
 
 install_grok() {
@@ -149,10 +238,17 @@ install_grok() {
   local keep_dir
   mkdir -p "${dest}/skills" "${dest}/orchestration"
 
+  if [[ -f "${SOURCE_GROK}/orchestration/senpai.sh" ]]; then
+    cp "${SOURCE_GROK}/orchestration/senpai.sh" "${dest}/orchestration/senpai.sh"
+    chmod +x "${dest}/orchestration/senpai.sh"
+    summary "Updated .grok/orchestration/senpai.sh"
+  fi
+
   if [[ -d "${SOURCE_GROK}/skills" ]]; then
     cp -R "${SOURCE_GROK}/skills/." "${dest}/skills/"
-    summary "Updated .grok/skills/ (claude-worker, codex-worker)"
+    summary "Updated .grok/skills/ (senpai, claude-worker, codex-worker)"
   fi
+  install_senpai_skills
 
   for f in TASK_PACKET.template.md RESULT_PACKET.template.md REVIEW_PACKET.template.md; do
     if [[ -f "${SOURCE_GROK}/orchestration/${f}" ]]; then
@@ -319,8 +415,10 @@ echo "grok-senpai install"
 echo "  target: $TARGET"
 echo
 
+preflight
 install_grok
 merge_agents
+ensure_claude_md
 
 echo
 echo "=== Summary ==="
@@ -329,6 +427,7 @@ for line in "${SUMMARY[@]}"; do
 done
 echo
 echo "Next steps:"
-echo "  1. Open Grok Build in: $TARGET"
+echo "  1. Open Grok Build, Claude Code, or Codex CLI in: $TARGET"
 echo "  2. Describe your goal in plain language."
-echo "  3. Grok follows the playbook; you only approve final diffs."
+echo "  3. The senpai host follows the playbook; you only approve final diffs."
+echo "  4. Non-Grok hosts are experimental until the conformance suite passes."
