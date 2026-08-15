@@ -108,7 +108,17 @@ Emit framed JSON (one schema for every agent). Versionless structured-text Resul
   "findings": [],
   "worker_model_alias": "sol",
   "worker_model": "gpt-5.6-sol",
-  "worker_effort": "ultra"
+  "worker_effort": "ultra",
+  "usage": {
+    "worker": {
+      "uncached_input": 0,
+      "cache_read": 0,
+      "cache_write": 0,
+      "reasoning": 0,
+      "output": 0,
+      "cost": 0
+    }
+  }
 }
 ```
 

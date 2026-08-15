@@ -114,7 +114,17 @@ Return a structured Result Packet (JSON preferred):
   ],
   "worker_model_alias": "fable",
   "worker_model": "fable",
-  "worker_effort": "high"
+  "worker_effort": "high",
+  "usage": {
+    "worker": {
+      "uncached_input": 0,
+      "cache_read": 0,
+      "cache_write": 0,
+      "reasoning": 0,
+      "output": 0,
+      "cost": 0
+    }
+  }
 }
 ```
 

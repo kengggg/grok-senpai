@@ -60,7 +60,8 @@ constraints:
   - Treat output as a proposal; the senpai host reviews independently
 
 deliverables:
-  - <files / Result Packet>
+  - <files / Result Packet with unified usage.worker>
+  - host records usage.senpai on collect (same run ledger)
 ```
 
 After launch, record the task in `.grok/orchestration/state.md`.

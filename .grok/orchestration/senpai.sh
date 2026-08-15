@@ -18,6 +18,12 @@ verbs:
           [--run-id ID] [--attempt N] [--model M] [--effort E]
           [--allow-primary-checkout]
   collect --task-id ID --attempt N --from PATH
+          [--run-id ID] [--usage PATH] [--senpai-usage PATH]
+  usage-record --run-id ID --party senpai|worker
+          [--task-id ID] [--attempt N]
+          [--uncached-input N] [--cache-read N] [--cache-write N]
+          [--reasoning N] [--output N] [--cost N]
+  usage-show [--run-id ID]
   snapshot [--cwd DIR]
   approve --base OID --tree OID [--host-session SID]
   render
@@ -386,13 +392,188 @@ cmd_launch() {
 
 # --- collect ----------------------------------------------------------------
 
+num_or_zero() {
+  local v="${1:-0}"
+  case "$v" in
+    ''|*[!0-9.]*) echo 0 ;;
+    *) echo "$v" ;;
+  esac
+}
+
+usage_blank_party() {
+  printf '%s\n' "uncached_input=0" "cache_read=0" "cache_write=0" "reasoning=0" "output=0" "cost=0"
+}
+
+usage_write_party_file() {
+  local dest="$1"
+  shift
+  local uncached_input=0 cache_read=0 cache_write=0 reasoning=0 output=0 cost=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --uncached-input) uncached_input="$(num_or_zero "${2:-}")"; shift 2 ;;
+      --cache-read) cache_read="$(num_or_zero "${2:-}")"; shift 2 ;;
+      --cache-write) cache_write="$(num_or_zero "${2:-}")"; shift 2 ;;
+      --reasoning) reasoning="$(num_or_zero "${2:-}")"; shift 2 ;;
+      --output) output="$(num_or_zero "${2:-}")"; shift 2 ;;
+      --cost) cost="$(num_or_zero "${2:-}")"; shift 2 ;;
+      *) die "usage-record: unknown field $1" ;;
+    esac
+  done
+  mkdir -p "$(dirname "$dest")"
+  cat >"$dest" <<EOF
+uncached_input=${uncached_input}
+cache_read=${cache_read}
+cache_write=${cache_write}
+reasoning=${reasoning}
+output=${output}
+cost=${cost}
+EOF
+}
+
+usage_field() {
+  local file="$1" key="$2"
+  if [[ -f "$file" ]]; then
+    awk -F= -v k="$key" '$1==k {print $2; found=1} END {if (!found) print 0}' "$file"
+  else
+    echo 0
+  fi
+}
+
+usage_add() {
+  awk -v a="$1" -v b="$2" 'BEGIN { printf "%.10g\n", a+b }'
+}
+
+usage_rewrite_rollup() {
+  local run_id="$1" task_id="$2" attempt="$3"
+  local dir sfile wfile out
+  dir="$(orch_dir)/runs/${run_id}"
+  sfile="${dir}/party-senpai.env"
+  wfile="${dir}/party-worker.env"
+  [[ -f "$sfile" ]] || usage_write_party_file "$sfile"
+  [[ -f "$wfile" ]] || usage_write_party_file "$wfile"
+  out="${dir}/usage.json"
+  local su sr sw srs so sc wu wr ww wrs wo wc
+  su="$(usage_field "$sfile" uncached_input)"
+  sr="$(usage_field "$sfile" cache_read)"
+  sw="$(usage_field "$sfile" cache_write)"
+  srs="$(usage_field "$sfile" reasoning)"
+  so="$(usage_field "$sfile" output)"
+  sc="$(usage_field "$sfile" cost)"
+  wu="$(usage_field "$wfile" uncached_input)"
+  wr="$(usage_field "$wfile" cache_read)"
+  ww="$(usage_field "$wfile" cache_write)"
+  wrs="$(usage_field "$wfile" reasoning)"
+  wo="$(usage_field "$wfile" output)"
+  wc="$(usage_field "$wfile" cost)"
+  cat >"$out" <<EOF
+{"run_id":"$(json_escape "$run_id")","task_id":"$(json_escape "$task_id")","attempt":$(num_or_zero "$attempt"),"currency":"USD","token_unit":"tokens","senpai":{"uncached_input":$(num_or_zero "$su"),"cache_read":$(num_or_zero "$sr"),"cache_write":$(num_or_zero "$sw"),"reasoning":$(num_or_zero "$srs"),"output":$(num_or_zero "$so"),"cost":$(num_or_zero "$sc")},"worker":{"uncached_input":$(num_or_zero "$wu"),"cache_read":$(num_or_zero "$wr"),"cache_write":$(num_or_zero "$ww"),"reasoning":$(num_or_zero "$wrs"),"output":$(num_or_zero "$wo"),"cost":$(num_or_zero "$wc")},"total":{"uncached_input":$(usage_add "$su" "$wu"),"cache_read":$(usage_add "$sr" "$wr"),"cache_write":$(usage_add "$sw" "$ww"),"reasoning":$(usage_add "$srs" "$wrs"),"output":$(usage_add "$so" "$wo"),"cost":$(usage_add "$sc" "$wc")}}
+EOF
+  printf '%s\n' "$out"
+}
+
+cmd_usage_record() {
+  local run_id="" party="" task_id="" attempt="1"
+  local uncached_input=0 cache_read=0 cache_write=0 reasoning=0 output=0 cost=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --run-id) run_id="${2:-}"; shift 2 ;;
+      --party) party="${2:-}"; shift 2 ;;
+      --task-id) task_id="${2:-}"; shift 2 ;;
+      --attempt) attempt="${2:-}"; shift 2 ;;
+      --uncached-input) uncached_input="$(num_or_zero "${2:-}")"; shift 2 ;;
+      --cache-read) cache_read="$(num_or_zero "${2:-}")"; shift 2 ;;
+      --cache-write) cache_write="$(num_or_zero "${2:-}")"; shift 2 ;;
+      --reasoning) reasoning="$(num_or_zero "${2:-}")"; shift 2 ;;
+      --output) output="$(num_or_zero "${2:-}")"; shift 2 ;;
+      --cost) cost="$(num_or_zero "${2:-}")"; shift 2 ;;
+      *) die "usage-record: unknown flag $1" ;;
+    esac
+  done
+  [[ -n "$run_id" ]] || die "usage-record: --run-id required"
+  case "$party" in
+    senpai|worker) ;;
+    *) die "usage-record: --party must be senpai|worker" ;;
+  esac
+  ensure_dirs
+  mkdir -p "$(orch_dir)/runs/${run_id}"
+  usage_write_party_file "$(orch_dir)/runs/${run_id}/party-${party}.env" \
+    --uncached-input "$uncached_input" --cache-read "$cache_read" \
+    --cache-write "$cache_write" --reasoning "$reasoning" \
+    --output "$output" --cost "$cost"
+  local line
+  line="{\"ts\":\"$(now_iso)\",\"event\":\"usage\",\"run_id\":\"$(json_escape "$run_id")\",\"task_id\":\"$(json_escape "$task_id")\",\"attempt\":$(num_or_zero "$attempt"),\"party\":\"${party}\",\"uncached_input\":$(num_or_zero "$uncached_input"),\"cache_read\":$(num_or_zero "$cache_read"),\"cache_write\":$(num_or_zero "$cache_write"),\"reasoning\":$(num_or_zero "$reasoning"),\"output\":$(num_or_zero "$output"),\"cost\":$(num_or_zero "$cost")}"
+  printf '%s\n' "$line" >>"$(orch_dir)/ledger.jsonl"
+  journal_append "$line"
+  usage_rewrite_rollup "$run_id" "$task_id" "$attempt" >/dev/null
+}
+
+cmd_usage_show() {
+  local run_id=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --run-id) run_id="${2:-}"; shift 2 ;;
+      *) die "usage-show: unknown flag $1" ;;
+    esac
+  done
+  ensure_dirs
+  if [[ -n "$run_id" ]]; then
+    [[ -f "$(orch_dir)/runs/${run_id}/usage.json" ]] || die "usage-show: no usage for $run_id"
+    cat "$(orch_dir)/runs/${run_id}/usage.json"
+    echo
+    return 0
+  fi
+  [[ -f "$(orch_dir)/ledger.jsonl" ]] || die "usage-show: ledger empty"
+  cat "$(orch_dir)/ledger.jsonl"
+}
+
+extract_usage_party() {
+  # stdin unused; args: result.json party outfile
+  local src="$1" party="$2" dest="$3"
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 - "$src" "$party" "$dest" <<'PY'
+import json, sys
+src, party, dest = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    data = json.load(open(src, encoding="utf-8"))
+except Exception:
+    sys.exit(1)
+usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
+if usage is None and any(k in data for k in (
+    "senpai", "worker", "uncached_input", "cache_read", "cache_write",
+    "reasoning", "output", "cost",
+)):
+    usage = data
+if not isinstance(usage, dict):
+    sys.exit(2)
+block = None
+if isinstance(usage.get(party), dict):
+    block = usage[party]
+elif any(k in usage for k in (
+    "uncached_input", "cache_read", "cache_write", "reasoning", "output", "cost"
+)) and not isinstance(usage.get("senpai"), dict) and not isinstance(usage.get("worker"), dict):
+    block = usage
+else:
+    sys.exit(3)
+keys = ("uncached_input", "cache_read", "cache_write", "reasoning", "output", "cost")
+with open(dest, "w", encoding="utf-8") as fh:
+    for k in keys:
+        v = block.get(k, 0)
+        if v is None or v == "":
+            v = 0
+        fh.write(f"{k}={v}\n")
+PY
+}
+
 cmd_collect() {
-  local task_id="" attempt="" from=""
+  local task_id="" attempt="" from="" run_id="" usage_path="" senpai_usage=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --task-id) task_id="${2:-}"; shift 2 ;;
       --attempt) attempt="${2:-}"; shift 2 ;;
       --from) from="${2:-}"; shift 2 ;;
+      --run-id) run_id="${2:-}"; shift 2 ;;
+      --usage) usage_path="${2:-}"; shift 2 ;;
+      --senpai-usage) senpai_usage="${2:-}"; shift 2 ;;
       *) die "collect: unknown flag $1" ;;
     esac
   done
@@ -427,6 +608,63 @@ cmd_collect() {
   cp "$from" "$tmp"
   mv "$tmp" "$dest"
   journal_append "{\"ts\":\"$(now_iso)\",\"event\":\"collect\",\"task_id\":\"$(json_escape "$task_id")\",\"attempt\":${attempt},\"path\":\"$(json_escape "$dest")\"}"
+
+  # Same run ledger for senpai + worker usage.
+  if [[ -z "$run_id" ]]; then
+    run_id="task-${task_id}"
+  fi
+  local tmpu
+  tmpu="$(mktemp "${TMPDIR:-/tmp}/senpai-usage.XXXXXX")"
+  if [[ -n "$usage_path" && -f "$usage_path" ]]; then
+    extract_usage_party "$usage_path" worker "${tmpu}.w" && cmd_usage_record \
+      --run-id "$run_id" --party worker --task-id "$task_id" --attempt "$attempt" \
+      --uncached-input "$(usage_field "${tmpu}.w" uncached_input)" \
+      --cache-read "$(usage_field "${tmpu}.w" cache_read)" \
+      --cache-write "$(usage_field "${tmpu}.w" cache_write)" \
+      --reasoning "$(usage_field "${tmpu}.w" reasoning)" \
+      --output "$(usage_field "${tmpu}.w" output)" \
+      --cost "$(usage_field "${tmpu}.w" cost)"
+    extract_usage_party "$usage_path" senpai "${tmpu}.s" && cmd_usage_record \
+      --run-id "$run_id" --party senpai --task-id "$task_id" --attempt "$attempt" \
+      --uncached-input "$(usage_field "${tmpu}.s" uncached_input)" \
+      --cache-read "$(usage_field "${tmpu}.s" cache_read)" \
+      --cache-write "$(usage_field "${tmpu}.s" cache_write)" \
+      --reasoning "$(usage_field "${tmpu}.s" reasoning)" \
+      --output "$(usage_field "${tmpu}.s" output)" \
+      --cost "$(usage_field "${tmpu}.s" cost)"
+  else
+    extract_usage_party "$from" worker "${tmpu}.w" && cmd_usage_record \
+      --run-id "$run_id" --party worker --task-id "$task_id" --attempt "$attempt" \
+      --uncached-input "$(usage_field "${tmpu}.w" uncached_input)" \
+      --cache-read "$(usage_field "${tmpu}.w" cache_read)" \
+      --cache-write "$(usage_field "${tmpu}.w" cache_write)" \
+      --reasoning "$(usage_field "${tmpu}.w" reasoning)" \
+      --output "$(usage_field "${tmpu}.w" output)" \
+      --cost "$(usage_field "${tmpu}.w" cost)"
+    extract_usage_party "$from" senpai "${tmpu}.s" && cmd_usage_record \
+      --run-id "$run_id" --party senpai --task-id "$task_id" --attempt "$attempt" \
+      --uncached-input "$(usage_field "${tmpu}.s" uncached_input)" \
+      --cache-read "$(usage_field "${tmpu}.s" cache_read)" \
+      --cache-write "$(usage_field "${tmpu}.s" cache_write)" \
+      --reasoning "$(usage_field "${tmpu}.s" reasoning)" \
+      --output "$(usage_field "${tmpu}.s" output)" \
+      --cost "$(usage_field "${tmpu}.s" cost)"
+  fi
+  if [[ -n "$senpai_usage" && -f "$senpai_usage" ]]; then
+    extract_usage_party "$senpai_usage" senpai "${tmpu}.hs" || \
+      extract_usage_party "$senpai_usage" worker "${tmpu}.hs"
+    if [[ -f "${tmpu}.hs" ]]; then
+      cmd_usage_record \
+        --run-id "$run_id" --party senpai --task-id "$task_id" --attempt "$attempt" \
+        --uncached-input "$(usage_field "${tmpu}.hs" uncached_input)" \
+        --cache-read "$(usage_field "${tmpu}.hs" cache_read)" \
+        --cache-write "$(usage_field "${tmpu}.hs" cache_write)" \
+        --reasoning "$(usage_field "${tmpu}.hs" reasoning)" \
+        --output "$(usage_field "${tmpu}.hs" output)" \
+        --cost "$(usage_field "${tmpu}.hs" cost)"
+    fi
+  fi
+  rm -f "$tmpu" "${tmpu}.w" "${tmpu}.s" "${tmpu}.hs"
   printf '%s\n' "$dest"
 }
 
@@ -632,6 +870,16 @@ case "$VERB" in
     CONTROL_ROOT="$(resolve_control_root)"
     export CONTROL_ROOT
     "cmd_${VERB}" "$@"
+    ;;
+  usage-record)
+    CONTROL_ROOT="$(resolve_control_root)"
+    export CONTROL_ROOT
+    cmd_usage_record "$@"
+    ;;
+  usage-show)
+    CONTROL_ROOT="$(resolve_control_root)"
+    export CONTROL_ROOT
+    cmd_usage_show "$@"
     ;;
   -h|--help|help) usage ;;
   *) die "unknown verb: $VERB" ;;

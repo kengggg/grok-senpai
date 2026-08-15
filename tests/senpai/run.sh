@@ -247,6 +247,28 @@ else
   echo "PASS  collect: same-attempt republish refused"
   PASS=$((PASS + 1))
 fi
+# unified usage → shared ledger
+RESU="$WORKDIR/result-usage.json"
+cat >"$RESU" <<'JSON'
+{"protocol_version":2,"task_id":"t-use","attempt":1,"status":"success","agent":"claude","mode":"implementation","usage":{"senpai":{"uncached_input":10,"cache_read":20,"cache_write":5,"reasoning":3,"output":7,"cost":0.02},"worker":{"uncached_input":100,"cache_read":200,"cache_write":50,"reasoning":30,"output":70,"cost":0.4}}}
+JSON
+RUNU="$("$SENPAI" mint --chain c-use --mode implementation)"
+"$SENPAI" collect --task-id t-use --attempt 1 --from "$RESU" --run-id "$RUNU" >/dev/null
+assert "usage: ledger exists" test -f "$PROJ/.grok/orchestration/ledger.jsonl"
+assert "usage: both parties in ledger" test "$(grep -c '"event":"usage"' "$PROJ/.grok/orchestration/ledger.jsonl")" -ge 2
+assert "usage: senpai party row" grep -q '"party":"senpai"' "$PROJ/.grok/orchestration/ledger.jsonl"
+assert "usage: worker party row" grep -q '"party":"worker"' "$PROJ/.grok/orchestration/ledger.jsonl"
+SHOW="$("$SENPAI" usage-show --run-id "$RUNU")"
+echo "$SHOW" | python3 -c 'import json,sys; u=json.load(sys.stdin); assert u["total"]["uncached_input"]==110; assert u["total"]["cache_read"]==220; assert u["total"]["cache_write"]==55; assert u["total"]["reasoning"]==33; assert u["total"]["output"]==77; assert abs(u["total"]["cost"]-0.42)<1e-9'
+assert "usage: rollup totals senpai+worker" test $? -eq 0
+echo '{"uncached_input":11,"cache_read":0,"cache_write":0,"reasoning":1,"output":2,"cost":0.05}' >"$WORKDIR/senpai-only.json"
+RESU2="$WORKDIR/result-use2.json"
+sed 's/"task_id":"t-use"/"task_id":"t-use2"/' "$RESU" >"$RESU2"
+"$SENPAI" collect --task-id t-use2 --attempt 1 --from "$RESU2" --run-id "$RUNU" --senpai-usage "$WORKDIR/senpai-only.json" >/dev/null
+SHOW2="$("$SENPAI" usage-show --run-id "$RUNU")"
+echo "$SHOW2" | python3 -c 'import json,sys; u=json.load(sys.stdin); assert u["senpai"]["uncached_input"]==11; assert u["senpai"]["cost"]==0.05'
+assert "usage: --senpai-usage overwrites host party" test $? -eq 0
+
 BAD="$WORKDIR/bad.json"
 echo '{"protocol_version":2,"task_id":"other","status":"success"}' >"$BAD"
 if "$SENPAI" collect --task-id t-col --attempt 2 --from "$BAD" >/dev/null 2>&1; then

@@ -144,6 +144,7 @@ ensure_logs_ignored() {
     ".grok/orchestration/logs/*" \
     "!.grok/orchestration/logs/.gitkeep" \
     ".grok/orchestration/journal.jsonl" \
+    ".grok/orchestration/ledger.jsonl" \
     ".grok/orchestration/locks/" \
     ".grok/orchestration/runs/" \
     ".grok/orchestration/results/" \
