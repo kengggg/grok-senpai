@@ -588,7 +588,8 @@ cmd_usage_show() {
 file_has_usage_payload() {
   local f="$1"
   [[ -f "$f" ]] || return 1
-  grep -qE '"usage"[[:space:]]*:|"uncached_input"[[:space:]]*:|"cost"[[:space:]]*:' "$f"
+  # Do not treat a bare "cost" key or the word cost in notes as usage.
+  grep -qE '"usage"[[:space:]]*:[[:space:]]*\{|"uncached_input"[[:space:]]*:' "$f"
 }
 
 require_python_for_usage() {
@@ -613,11 +614,17 @@ try:
 except Exception:
     sys.exit(1)
 usage = data.get("usage") if isinstance(data.get("usage"), dict) else None
+# A stray top-level "cost" is not a usage payload (notes, summaries).
 if usage is None and any(k in data for k in (
-    "senpai", "worker", "uncached_input", "cache_read", "cache_write",
-    "reasoning", "output", "cost",
+    "uncached_input", "cache_read", "cache_write", "reasoning",
 )):
     usage = data
+elif usage is None:
+    for p in ("senpai", "worker"):
+        block = data.get(p)
+        if isinstance(block, dict) and "uncached_input" in block:
+            usage = data
+            break
 if not isinstance(usage, dict):
     sys.exit(2)
 block = None
@@ -639,6 +646,58 @@ with open(dest, "w", encoding="utf-8") as fh:
 PY
 }
 
+collect_validate_result() {
+  local from="$1" task_id="$2" attempt="$3"
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$from" "$task_id" "$attempt" <<'PY' \
+      || die "collect: not a framed JSON result (top-level task_id/status)"
+import json, sys
+path, task_id, attempt = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    with open(path, encoding="utf-8") as fh:
+        data = json.load(fh)
+except Exception:
+    sys.exit(1)
+if not isinstance(data, dict):
+    sys.exit(2)
+if data.get("task_id") != task_id:
+    sys.exit(3)
+if "status" not in data:
+    sys.exit(4)
+if "protocol_version" in data and "attempt" in data:
+    try:
+        if int(data["attempt"]) != int(attempt):
+            sys.exit(5)
+    except (TypeError, ValueError):
+        sys.exit(5)
+sys.exit(0)
+PY
+    return 0
+  fi
+  # No python: require one {...} object. Nested task_id is still a known
+  # nopy limitation; python3 path is the JSON parse.
+  local first last
+  first="$(awk 'NF { sub(/^[[:space:]]+/, ""); print substr($0,1,1); exit }' "$from")"
+  last="$(awk 'NF { line=$0 } END {
+    if (line != "") {
+      sub(/[[:space:]]+$/, "", line)
+      print substr(line, length(line), 1)
+    }
+  }' "$from")"
+  [[ "$first" == "{" && "$last" == "}" ]] || die "collect: not a single JSON object"
+  grep -q '"task_id"' "$from" || die "collect: missing task_id"
+  grep -q '"status"' "$from" || die "collect: missing status"
+  if ! grep -Eq '"task_id"[[:space:]]*:[[:space:]]*"'"$task_id"'"' "$from"; then
+    die "collect: task_id mismatch"
+  fi
+  if grep -q '"protocol_version"' "$from"; then
+    if grep -q '"attempt"' "$from"; then
+      grep -Eq '"attempt"[[:space:]]*:[[:space:]]*'"${attempt}"'([^0-9]|$)' "$from" \
+        || die "collect: attempt mismatch (malformed v2)"
+    fi
+  fi
+}
+
 cmd_collect() {
   local task_id="" attempt="" from="" run_id="" usage_path="" senpai_usage=""
   while [[ $# -gt 0 ]]; do
@@ -656,19 +715,7 @@ cmd_collect() {
   [[ -f "$from" ]] || die "collect: source missing"
   ensure_dirs
 
-  # framing only — no semantic schema parser. v1 and v2 both match task_id.
-  grep -q '{' "$from" || die "collect: not JSON-shaped"
-  grep -q '"task_id"' "$from" || die "collect: missing task_id"
-  grep -q '"status"' "$from" || die "collect: missing status"
-  if ! grep -Eq '"task_id"[[:space:]]*:[[:space:]]*"'"$task_id"'"' "$from"; then
-    die "collect: task_id mismatch"
-  fi
-  if grep -q '"protocol_version"' "$from"; then
-    if grep -q '"attempt"' "$from"; then
-      grep -Eq '"attempt"[[:space:]]*:[[:space:]]*'"${attempt}"'([^0-9]|$)' "$from" \
-        || die "collect: attempt mismatch (malformed v2)"
-    fi
-  fi
+  collect_validate_result "$from" "$task_id" "$attempt"
 
   if file_has_usage_payload "$from" \
     || { [[ -n "$usage_path" ]] && file_has_usage_payload "$usage_path"; } \

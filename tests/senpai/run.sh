@@ -322,6 +322,42 @@ else
   PASS=$((PASS + 1))
 fi
 
+# JSON parse: nested task_id is not the result identity
+NEST="$WORKDIR/nested-tid.json"
+echo '{"status":"success","note":{"task_id":"t-nested"}}' >"$NEST"
+if "$SENPAI" collect --task-id t-nested --attempt 1 --from "$NEST" >/dev/null 2>&1; then
+  echo "FAIL  collect accepted nested task_id" >&2
+  FAIL=$((FAIL + 1))
+else
+  echo "PASS  collect: nested task_id refused"
+  PASS=$((PASS + 1))
+fi
+
+# JSON parse: trailing bytes after one object
+TRAIL="$WORKDIR/trail.json"
+printf '{"task_id":"t-trail","status":"success"} trailing\n' >"$TRAIL"
+if "$SENPAI" collect --task-id t-trail --attempt 1 --from "$TRAIL" >/dev/null 2>&1; then
+  echo "FAIL  collect accepted trailing garbage" >&2
+  FAIL=$((FAIL + 1))
+else
+  echo "PASS  collect: trailing garbage refused"
+  PASS=$((PASS + 1))
+fi
+
+# word / key "cost" is not a usage payload
+COSTNOTE="$WORKDIR/cost-note.json"
+printf '%s\n' '{"task_id":"t-costword","status":"success","note":"quoted \"cost\": 5 is not usage"}' >"$COSTNOTE"
+DESTCOST="$("$SENPAI" collect --task-id t-costword --attempt 1 --from "$COSTNOTE")"
+assert "collect: note containing cost published" test -f "$DESTCOST"
+assert "collect: cost in note did not write usage rollup" \
+  test ! -f "$PROJ/.grok/orchestration/runs/task-t-costword/usage.json"
+COSTKEY="$WORKDIR/cost-key.json"
+echo '{"task_id":"t-costkey","status":"success","cost":"n/a"}' >"$COSTKEY"
+DESTCK="$("$SENPAI" collect --task-id t-costkey --attempt 1 --from "$COSTKEY")"
+assert "collect: top-level cost key published" test -f "$DESTCK"
+assert "collect: top-level cost key did not write usage rollup" \
+  test ! -f "$PROJ/.grok/orchestration/runs/task-t-costkey/usage.json"
+
 # usage without python3 must not silently become $0
 NOPY="$WORKDIR/nopy-bin"
 mkdir -p "$NOPY"
@@ -337,6 +373,22 @@ RESNP="$WORKDIR/res-nopy.json"
 echo '{"task_id":"t-nopy","status":"success"}' >"$RESNP"
 PATH="$NOPY" "$SENPAI" collect --task-id t-nopy --attempt 1 --from "$RESNP" >/dev/null
 assert "usage: collect without usage works without python3" test $? -eq 0
+RESCOST="$WORKDIR/res-nopy-cost.json"
+printf '%s\n' '{"task_id":"t-nopycost","status":"success","note":"quoted \"cost\": 5 is not usage"}' >"$RESCOST"
+if PATH="$NOPY" "$SENPAI" collect --task-id t-nopycost --attempt 1 --from "$RESCOST" >/dev/null 2>"$WORKDIR/nopy-cost.err"; then
+  echo "PASS  collect: nopy + cost word still works without python3"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL  collect refused nopy result that only mentions cost" >&2
+  FAIL=$((FAIL + 1))
+fi
+if grep -q 'python3 is missing' "$WORKDIR/nopy-cost.err"; then
+  echo "FAIL  collect: nopy + cost word demanded python3" >&2
+  FAIL=$((FAIL + 1))
+else
+  echo "PASS  collect: nopy + cost word did not demand python3"
+  PASS=$((PASS + 1))
+fi
 RESUP="$WORKDIR/res-nopy-use.json"
 echo '{"task_id":"t-nopyu","status":"success","usage":{"worker":{"uncached_input":9,"cost":1.5}}}' >"$RESUP"
 if PATH="$NOPY" "$SENPAI" collect --task-id t-nopyu --attempt 1 --from "$RESUP" >/dev/null 2>"$WORKDIR/nopy.err"; then
