@@ -60,6 +60,7 @@ for agent in claude codex; do
     --prompt-file "$PROMPT" --cwd "$WT" >/dev/null
   assert "matrix $agent implement+review launched" test -s "$WORKDIR/argv-$agent-rev.nul"
 done
+assert "launch: matrix did not write runs/none" test ! -e "$PROJ/.grok/orchestration/runs/none"
 
 # parallel chains
 "$SENPAI" lock --chain p1 >/dev/null
