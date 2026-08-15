@@ -69,6 +69,7 @@ The reviewer must receive: **Task Packet + Review Packet + read-only worktree/di
 - Host skill: `.grok/skills/senpai/` (also installed to `.agents/skills/senpai/` and `.claude/skills/senpai/`)
 - Worker skills: `.grok/skills/claude-worker/`, `.grok/skills/codex-worker/`
 - Helper: `.grok/orchestration/senpai.sh`
+- Additive machine state: `.senpai/` on fresh installs; otherwise `.grok/orchestration/` (no flag day)
 - Worker defaults: `.grok/orchestration/worker-config.toml`
 - Active tracking: `.grok/orchestration/state.md`
 

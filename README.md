@@ -104,6 +104,7 @@ GROK_SENPAI_REF=main curl -sL https://raw.githubusercontent.com/kengggg/grok-sen
 ```bash
 git clone https://github.com/kengggg/grok-senpai.git
 /path/to/grok-senpai/install.sh /path/to/your-app
+/path/to/grok-senpai/install.sh --host claude --target /path/to/your-app
 # or, from inside your app:
 /path/to/grok-senpai/install.sh .
 ```
@@ -118,8 +119,9 @@ cp -R path/to/grok-senpai/.grok .
 ### What gets installed
 
 - `.grok/skills/` — `senpai`, `claude-worker`, `codex-worker` (**always refreshed** on re-run)
-- `.agents/skills/senpai/` and `.claude/skills/senpai/` — native host discovery copies
+- `.agents/skills/senpai/` and `.claude/skills/senpai/` — native host discovery copies (`--host` can limit these)
 - `.grok/orchestration/senpai.sh` — pack-floor helper
+- `.senpai/` — additive machine state on fresh installs (journal, ledger, locks, runs). Existing `.grok` journals stay put.
 - `.grok/orchestration/` — Task/Result/**Review** packet templates + config/alias examples (refreshed)
 - `worker-config.toml` — created once with defaults; **not overwritten** on re-run
 - `model-aliases.toml` — created once with friendly aliases; **not overwritten** on re-run

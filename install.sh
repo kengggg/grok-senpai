@@ -2,12 +2,17 @@
 # install.sh — install grok-senpai into a project
 #
 # Usage (local checkout):
-#   ./install.sh                 # install into current directory
-#   ./install.sh /path/to/app    # install into target project
+#   ./install.sh                              # current directory, all hosts
+#   ./install.sh /path/to/app
+#   ./install.sh --target /path/to/app
+#   ./install.sh --host all --target /path
+#   ./install.sh --host claude                # pack + Claude discovery only
 #
-# Usage (one-liner, no clone needed):
-#   curl -sL https://raw.githubusercontent.com/kengggg/grok-senpai/main/install.sh | bash
-#   curl -sL https://raw.githubusercontent.com/kengggg/grok-senpai/main/install.sh | bash -s -- /path/to/project
+# --host grok|claude|codex|all   extra discovery roots (default: all)
+# --target DIR                   install destination (default: . or leftover $1)
+#
+# The pack (.grok/ helper, workers, templates) always installs.
+# --host only chooses which native skill copies to write besides .grok/skills/senpai.
 #
 # Optional:
 #   GROK_SENPAI_REF=main   # branch or tag when downloading (default: main)
@@ -22,12 +27,49 @@ MARKER_END="<!-- grok-senpai:playbook:end -->"
 REPO_SLUG="kengggg/grok-senpai"
 REF="${GROK_SENPAI_REF:-main}"
 
-TARGET_ARG="${1:-.}"
-if [[ "$TARGET_ARG" == --* ]]; then
-  echo "error: installer does not take flags; pass a target directory (got ${TARGET_ARG})" >&2
-  echo "hint: --host is reserved until option parsing lands; today \$1 is the target path" >&2
-  exit 1
-fi
+install_usage() {
+  cat <<'EOF' >&2
+usage: install.sh [--host grok|claude|codex|all] [--target DIR] [DIR]
+EOF
+}
+
+HOSTS="all"
+TARGET_ARG="."
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      install_usage
+      exit 0
+      ;;
+    --host)
+      HOSTS="${2:-}"
+      [[ -n "$HOSTS" ]] || { echo "error: --host needs grok|claude|codex|all" >&2; exit 1; }
+      shift 2
+      ;;
+    --target)
+      TARGET_ARG="${2:-}"
+      [[ -n "$TARGET_ARG" ]] || { echo "error: --target needs a directory" >&2; exit 1; }
+      shift 2
+      ;;
+    --)
+      shift
+      break
+      ;;
+    --*)
+      echo "error: unknown flag $1" >&2
+      install_usage
+      exit 1
+      ;;
+    *)
+      TARGET_ARG="$1"
+      shift
+      ;;
+  esac
+done
+case "$HOSTS" in
+  grok|claude|codex|all) ;;
+  *) echo "error: --host must be grok|claude|codex|all (got $HOSTS)" >&2; exit 1 ;;
+esac
 if [[ ! -d "$TARGET_ARG" ]]; then
   echo "error: target directory does not exist: $TARGET_ARG" >&2
   exit 1
@@ -149,7 +191,14 @@ ensure_logs_ignored() {
     ".grok/orchestration/runs/" \
     ".grok/orchestration/results/" \
     ".grok/orchestration/prompts/" \
-    ".grok/orchestration/state.generated.md"
+    ".grok/orchestration/state.generated.md" \
+    ".senpai/journal.jsonl" \
+    ".senpai/ledger.jsonl" \
+    ".senpai/locks/" \
+    ".senpai/runs/" \
+    ".senpai/results/" \
+    ".senpai/prompts/" \
+    ".senpai/logs/"
   do
     if ensure_ignore_line "$ignore_file" "$p"; then
       changed=true
@@ -185,11 +234,8 @@ preflight() {
       "${TARGET}/.grok/orchestration/state.md")
   fi
 
-  for dest in \
-    "${TARGET}/.grok/skills/senpai/SKILL.md" \
-    "${TARGET}/.agents/skills/senpai/SKILL.md" \
-    "${TARGET}/.claude/skills/senpai/SKILL.md"
-  do
+  local dest
+  for dest in $(skill_dests); do
     if [[ -e "$dest" ]] && ! is_managed_skill "$dest"; then
       echo "error: unowned skill at $dest (missing senpai-managed marker); aborting with no writes" >&2
       exit 1
@@ -197,24 +243,49 @@ preflight() {
   done
 }
 
+skill_dests() {
+  printf '%s\n' "${TARGET}/.grok/skills/senpai/SKILL.md"
+  case "$HOSTS" in
+    all|codex) printf '%s\n' "${TARGET}/.agents/skills/senpai/SKILL.md" ;;
+  esac
+  case "$HOSTS" in
+    all|claude) printf '%s\n' "${TARGET}/.claude/skills/senpai/SKILL.md" ;;
+  esac
+}
+
+ensure_senpai_state_dir() {
+  # Additive chrome only. Never move an existing .grok journal/runs tree.
+  if [[ -d "${TARGET}/.senpai" ]]; then
+    summary "Kept existing .senpai/ machine-state dir"
+    return 0
+  fi
+  if [[ -f "${TARGET}/.grok/orchestration/journal.jsonl" || -d "${TARGET}/.grok/orchestration/runs" ]]; then
+    summary "Kept machine state in .grok/orchestration (no .senpai flag day)"
+    return 0
+  fi
+  mkdir -p "${TARGET}/.senpai"
+  cat >"${TARGET}/.senpai/README.md" <<'EOF'
+# .senpai
+
+Additive machine state for grok-senpai (journal, ledger, locks, runs).
+The pack, helper, and playbook stay in `.grok/` + `AGENTS.md`.
+EOF
+  summary "Created .senpai/ for additive machine state"
+}
+
 install_senpai_skills() {
-  local sum src dest dests
+  local sum src dest
   [[ -f "${SOURCE_GROK}/orchestration/senpai.sh" ]] || return 0
   sum="$(helper_checksum)"
   src="${SOURCE_GROK}/skills/senpai/SKILL.md"
   [[ -f "$src" ]] || return 0
-  dests=(
-    "${TARGET}/.grok/skills/senpai/SKILL.md"
-    "${TARGET}/.agents/skills/senpai/SKILL.md"
-    "${TARGET}/.claude/skills/senpai/SKILL.md"
-  )
-  local d
-  for d in "${dests[@]}"; do
-    mkdir -p "$(dirname "$d")"
+  while IFS= read -r dest; do
+    [[ -n "$dest" ]] || continue
+    mkdir -p "$(dirname "$dest")"
     sed "s/checksum=HELPER/checksum=${sum}/g; s/checksum=[A-Za-z0-9]*/checksum=${sum}/" \
-      "$src" >"$d"
-  done
-  summary "Installed senpai host skill at three discovery roots (checksum ${sum})"
+      "$src" >"$dest"
+  done < <(skill_dests)
+  summary "Installed senpai host skill for --host ${HOSTS} (checksum ${sum})"
 }
 
 ensure_claude_md() {
@@ -237,6 +308,7 @@ install_grok() {
   local dest="${TARGET}/.grok"
   local keep_dir
   mkdir -p "${dest}/skills" "${dest}/orchestration"
+  ensure_senpai_state_dir
 
   if [[ -f "${SOURCE_GROK}/orchestration/senpai.sh" ]]; then
     cp "${SOURCE_GROK}/orchestration/senpai.sh" "${dest}/orchestration/senpai.sh"
