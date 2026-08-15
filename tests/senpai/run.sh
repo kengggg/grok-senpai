@@ -49,8 +49,10 @@ git -C "$PROJ" add README
 git -C "$PROJ" commit -qm init
 
 "$ROOT/install.sh" "$PROJ" >/dev/null
+STATE="$PROJ/.senpai"
 
 assert "install: helper exists" test -x "$PROJ/.grok/orchestration/senpai.sh"
+assert "install: created additive .senpai/" test -d "$STATE"
 assert "install: grok skill" test -f "$PROJ/.grok/skills/senpai/SKILL.md"
 assert "install: agents skill" test -f "$PROJ/.agents/skills/senpai/SKILL.md"
 assert "install: claude skill" test -f "$PROJ/.claude/skills/senpai/SKILL.md"
@@ -79,7 +81,7 @@ assert_eq "reinstall: toml byte-identical" "$(cksum "$PROJ/.grok/orchestration/w
 assert_eq "reinstall: state byte-identical" "$(cksum "$PROJ/.grok/orchestration/state.md" | awk '{print $1}')" "$HASH_STATE"
 assert_eq "reinstall: aliases byte-identical" "$(cksum "$PROJ/.grok/orchestration/model-aliases.toml" | awk '{print $1}')" "$HASH_ALIAS"
 assert_eq "reinstall: CLAUDE.md byte-identical" "$(cksum "$PROJ/CLAUDE.md" | awk '{print $1}')" "$HASH_CLAUDE"
-assert "reinstall: gitignore has journal" grep -q ".grok/orchestration/journal.jsonl" "$PROJ/.gitignore"
+assert "reinstall: gitignore has journal" grep -q ".senpai/journal.jsonl" "$PROJ/.gitignore"
 
 # --- 3. unowned collision aborts --------------------------------------------
 COLLIDE="$WORKDIR/collide"
@@ -157,16 +159,16 @@ RUN_INJ="$("$SENPAI" mint --chain c1 --mode implementation)"
 PID="$("$SENPAI" launch --agent claude --mode implementation --task-id t-inj --chain c1 \
   --prompt-file "$PROMPT" --cwd "$WT" --run-id "$RUN_INJ")"
 assert "launch: recorded pid is numeric" test -n "$PID"
-assert "launch: pid stored under minted run" test -f "$PROJ/.grok/orchestration/runs/${RUN_INJ}/pid"
-assert "launch: with --run-id does not create runs/none" test ! -e "$PROJ/.grok/orchestration/runs/none"
+assert "launch: pid stored under minted run" test -f "$STATE/runs/${RUN_INJ}/pid"
+assert "launch: with --run-id does not create runs/none" test ! -e "$STATE/runs/none"
 
 # omit --run-id: helper must mint, never dump into runs/none
 PID_MINT="$("$SENPAI" launch --agent claude --mode implementation --task-id t-norun --chain c-norun \
   --prompt-file "$PROMPT" --cwd "$WT")"
 assert "launch: omit --run-id still returns pid" test -n "$PID_MINT"
-assert "launch: omit --run-id does not create runs/none" test ! -e "$PROJ/.grok/orchestration/runs/none"
+assert "launch: omit --run-id does not create runs/none" test ! -e "$STATE/runs/none"
 assert "launch: omit --run-id minted a run dir" \
-  test "$(find "$PROJ/.grok/orchestration/runs" -mindepth 2 -name pid | wc -l)" -ge 2
+  test "$(find "$STATE/runs" -mindepth 2 -name pid | wc -l)" -ge 2
 if "$SENPAI" launch --agent claude --mode implementation --task-id t-none --chain c-none \
     --prompt-file "$PROMPT" --cwd "$WT" --run-id none >/dev/null 2>&1; then
   echo "FAIL  launch accepted --run-id none" >&2
@@ -253,7 +255,7 @@ for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
   fi
   sleep 0.05
 done
-python3 - "$ARGV4" "$STDIN4" "$PROJ/.grok/orchestration/prompts/t-big.1.txt" <<'PY'
+python3 - "$ARGV4" "$STDIN4" "$STATE/prompts/t-big.1.txt" <<'PY'
 import sys, os
 parts=open(sys.argv[1],"rb").read().split(b"\0")
 parts=[p.decode() for p in parts if p]
@@ -290,10 +292,10 @@ cat >"$RESU" <<'JSON'
 JSON
 RUNU="$("$SENPAI" mint --chain c-use --mode implementation)"
 "$SENPAI" collect --task-id t-use --attempt 1 --from "$RESU" --run-id "$RUNU" >/dev/null
-assert "usage: ledger exists" test -f "$PROJ/.grok/orchestration/ledger.jsonl"
-assert "usage: both parties in ledger" test "$(grep -c '"event":"usage"' "$PROJ/.grok/orchestration/ledger.jsonl")" -ge 2
-assert "usage: senpai party row" grep -q '"party":"senpai"' "$PROJ/.grok/orchestration/ledger.jsonl"
-assert "usage: worker party row" grep -q '"party":"worker"' "$PROJ/.grok/orchestration/ledger.jsonl"
+assert "usage: ledger exists" test -f "$STATE/ledger.jsonl"
+assert "usage: both parties in ledger" test "$(grep -c '"event":"usage"' "$STATE/ledger.jsonl")" -ge 2
+assert "usage: senpai party row" grep -q '"party":"senpai"' "$STATE/ledger.jsonl"
+assert "usage: worker party row" grep -q '"party":"worker"' "$STATE/ledger.jsonl"
 SHOW="$("$SENPAI" usage-show --run-id "$RUNU")"
 echo "$SHOW" | python3 -c 'import json,sys; u=json.load(sys.stdin); assert u["total"]["uncached_input"]==110; assert u["total"]["cache_read"]==220; assert u["total"]["cache_write"]==55; assert u["total"]["reasoning"]==33; assert u["total"]["output"]==77; assert abs(u["total"]["cost"]-0.42)<1e-9'
 assert "usage: rollup totals senpai+worker" test $? -eq 0
@@ -367,13 +369,13 @@ printf '%s\n' '{"task_id":"t-costword","status":"success","note":"quoted \"cost\
 DESTCOST="$("$SENPAI" collect --task-id t-costword --attempt 1 --from "$COSTNOTE")"
 assert "collect: note containing cost published" test -f "$DESTCOST"
 assert "collect: cost in note did not write usage rollup" \
-  test ! -f "$PROJ/.grok/orchestration/runs/task-t-costword/usage.json"
+  test ! -f "$STATE/runs/task-t-costword/usage.json"
 COSTKEY="$WORKDIR/cost-key.json"
 echo '{"task_id":"t-costkey","status":"success","cost":"n/a"}' >"$COSTKEY"
 DESTCK="$("$SENPAI" collect --task-id t-costkey --attempt 1 --from "$COSTKEY")"
 assert "collect: top-level cost key published" test -f "$DESTCK"
 assert "collect: top-level cost key did not write usage rollup" \
-  test ! -f "$PROJ/.grok/orchestration/runs/task-t-costkey/usage.json"
+  test ! -f "$STATE/runs/task-t-costkey/usage.json"
 
 # usage without python3 must not silently become $0
 NOPY="$WORKDIR/nopy-bin"
@@ -416,7 +418,7 @@ else
   PASS=$((PASS + 1))
 fi
 assert "usage: no python does not write \$0 rollup" \
-  test ! -f "$PROJ/.grok/orchestration/runs/task-t-nopyu/usage.json"
+  test ! -f "$STATE/runs/task-t-nopyu/usage.json"
 assert "usage: no python error names the missing interpreter" \
   grep -q 'python3 is missing' "$WORKDIR/nopy.err"
 
@@ -453,7 +455,7 @@ else
   PASS=$((PASS + 1))
 fi
 # steal: dead pid + ttl
-LOCKDIR="$PROJ/.grok/orchestration/locks/lock-a"
+LOCKDIR="$STATE/locks/lock-a"
 echo 999999 >"$LOCKDIR/pid"
 sleep 2
 "$SENPAI" lock --chain lock-a >/dev/null
@@ -461,7 +463,7 @@ assert "lock: steal after dead pid + TTL" test $? -eq 0
 
 # PID reuse: this shell is alive, but recorded starttime is not ours
 "$SENPAI" lock --chain lock-reuse >/dev/null
-LOCKR="$PROJ/.grok/orchestration/locks/lock-reuse"
+LOCKR="$STATE/locks/lock-reuse"
 echo $$ >"$LOCKR/pid"
 echo old-token-reuse >"$LOCKR/start_token"
 echo NOT-THE-STARTTIME >"$LOCKR/pid_start"
@@ -549,13 +551,37 @@ cat >"$PROJ/.grok/orchestration/state.md" <<EOF
 EOF
 "$SENPAI" import >/dev/null
 assert "import: backup exists" test -f "$PROJ/.grok/orchestration/state.md.pre-v2"
-assert "import: sot is journal" grep -qx journal "$PROJ/.grok/orchestration/sot"
-assert "import: legacy meta" test -f "$PROJ/.grok/orchestration/runs/legacy-debate-vax-mod/meta"
-assert "import: not resumable" grep -q 'resumable=0' "$PROJ/.grok/orchestration/runs/legacy-debate-vax-mod/meta"
-assert "import: may not delegate" grep -q 'may_delegate=0' "$PROJ/.grok/orchestration/runs/legacy-debate-vax-mod/meta"
+assert "import: sot is journal" grep -qx journal "$STATE/sot"
+assert "import: legacy meta" test -f "$STATE/runs/legacy-debate-vax-mod/meta"
+assert "import: not resumable" grep -q 'resumable=0' "$STATE/runs/legacy-debate-vax-mod/meta"
+assert "import: may not delegate" grep -q 'may_delegate=0' "$STATE/runs/legacy-debate-vax-mod/meta"
 "$SENPAI" render >/dev/null
 assert "render: generated" test -f "$PROJ/.grok/orchestration/state.generated.md"
 assert "render: watermark" grep -q "generated by senpai.sh render" "$PROJ/.grok/orchestration/state.md"
+
+# --- #11 chrome: --host and no flag-day ------------------------------------
+HOSTONLY="$WORKDIR/host-claude"
+mkdir -p "$HOSTONLY"
+git -C "$HOSTONLY" init -q
+"$ROOT/install.sh" --host claude --target "$HOSTONLY" >/dev/null
+assert "host claude: pack skill" test -f "$HOSTONLY/.grok/skills/senpai/SKILL.md"
+assert "host claude: claude skill" test -f "$HOSTONLY/.claude/skills/senpai/SKILL.md"
+assert "host claude: no agents skill" test ! -e "$HOSTONLY/.agents/skills/senpai/SKILL.md"
+assert "host claude: .senpai created" test -d "$HOSTONLY/.senpai"
+
+HOSTALL="$WORKDIR/host-all"
+mkdir -p "$HOSTALL"
+git -C "$HOSTALL" init -q
+"$ROOT/install.sh" --host all "$HOSTALL" >/dev/null
+assert "host all: agents skill" test -f "$HOSTALL/.agents/skills/senpai/SKILL.md"
+
+# existing .grok journal: do not invent .senpai
+OLD="$WORKDIR/old-state"
+mkdir -p "$OLD/.grok/orchestration/runs"
+echo '{}' >"$OLD/.grok/orchestration/journal.jsonl"
+git -C "$OLD" init -q
+"$ROOT/install.sh" --target "$OLD" >/dev/null
+assert "no flag-day: existing journal stays in .grok" test ! -d "$OLD/.senpai"
 
 echo
 echo "passed=$PASS failed=$FAIL"

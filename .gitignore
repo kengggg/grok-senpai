@@ -14,6 +14,13 @@
 .grok/orchestration/state.md.pre-v2
 .grok/orchestration/sot
 .grok/orchestration/TASK_*.md
+.senpai/journal.jsonl
+.senpai/ledger.jsonl
+.senpai/locks/
+.senpai/runs/
+.senpai/results/
+.senpai/prompts/
+.senpai/logs/
 
 # Python
 __pycache__/

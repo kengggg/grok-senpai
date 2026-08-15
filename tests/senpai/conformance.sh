@@ -29,6 +29,7 @@ git -C "$PROJ" config user.name t
 git -C "$PROJ" add README
 git -C "$PROJ" commit -qm init
 "$ROOT/install.sh" "$PROJ" >/dev/null
+STATE="$PROJ/.senpai"
 
 # three host skills, identical managed checksum
 SUM="$(cksum "$PROJ/.grok/orchestration/senpai.sh" | awk '{print $1}')"
@@ -73,13 +74,13 @@ PY
     FAIL=$((FAIL+1))
   fi
 done
-assert "launch: matrix did not write runs/none" test ! -e "$PROJ/.grok/orchestration/runs/none"
+assert "launch: matrix did not write runs/none" test ! -e "$STATE/runs/none"
 
 # parallel chains
 "$SENPAI" lock --chain p1 >/dev/null
 "$SENPAI" lock --chain p2 >/dev/null
-assert "parallel: two chains" test -d "$PROJ/.grok/orchestration/locks/p1" \
-  -a -d "$PROJ/.grok/orchestration/locks/p2"
+assert "parallel: two chains" test -d "$STATE/locks/p1" \
+  -a -d "$STATE/locks/p2"
 if "$SENPAI" lock --chain p1 >/dev/null 2>&1; then
   echo "FAIL  parallel: same chain double lock" >&2; FAIL=$((FAIL+1))
 else
@@ -87,7 +88,7 @@ else
 fi
 
 # crash / resume: dead pid + TTL steal
-echo 1 >"$PROJ/.grok/orchestration/locks/p1/pid"
+echo 1 >"$STATE/locks/p1/pid"
 sleep 2
 "$SENPAI" lock --chain p1 >/dev/null
 assert "crash-resume: steal" test $? -eq 0

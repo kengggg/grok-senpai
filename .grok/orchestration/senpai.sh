@@ -102,17 +102,29 @@ resolve_control_root() {
   die "cannot resolve control root (set SENPAI_CONTROL_ROOT)"
 }
 
-orch_dir() { printf '%s/.grok/orchestration\n' "$CONTROL_ROOT"; }
+# Pack files (helper, templates, state.md) stay under .grok forever.
+pack_dir() { printf '%s/.grok/orchestration\n' "$CONTROL_ROOT"; }
+orch_dir() { pack_dir; }
+
+# Additive machine state (journal, ledger, locks, runs) prefers .senpai/
+# when that directory exists. Missing .senpai keeps the old location.
+state_dir() {
+  if [[ -n "${CONTROL_ROOT:-}" && -d "${CONTROL_ROOT}/.senpai" ]]; then
+    printf '%s/.senpai\n' "$CONTROL_ROOT"
+  else
+    pack_dir
+  fi
+}
 
 ensure_dirs() {
-  mkdir -p "$(orch_dir)/locks" "$(orch_dir)/runs" "$(orch_dir)/results" \
-    "$(orch_dir)/prompts" "$(orch_dir)/logs"
+  mkdir -p "$(state_dir)/locks" "$(state_dir)/runs" "$(state_dir)/results" \
+    "$(state_dir)/prompts" "$(state_dir)/logs"
 }
 
 journal_append() {
   local line="$1"
   ensure_dirs
-  printf '%s\n' "$line" >>"$(orch_dir)/journal.jsonl"
+  printf '%s\n' "$line" >>"$(state_dir)/journal.jsonl"
 }
 
 helper_checksum() {
@@ -124,7 +136,7 @@ helper_checksum() {
 
 LOCK_TTL="${SENPAI_LOCK_TTL:-60}"
 
-lock_dir_for() { printf '%s/locks/%s\n' "$(orch_dir)" "$1"; }
+lock_dir_for() { printf '%s/locks/%s\n' "$(state_dir)" "$1"; }
 
 pid_alive() {
   local pid="$1"
@@ -284,7 +296,7 @@ cmd_mint() {
   local depth=0 may_delegate=1 parent_may=1 parent_depth=0
   if [[ -n "$parent" ]]; then
     local pmeta
-    pmeta="$(orch_dir)/runs/${parent}/meta"
+    pmeta="$(state_dir)/runs/${parent}/meta"
     [[ -f "$pmeta" ]] || die "mint: unknown parent $parent"
     # shellcheck disable=SC1090
     parent_depth="$(awk -F= '/^depth=/{print $2}' "$pmeta")"
@@ -298,8 +310,8 @@ cmd_mint() {
 
   local run_id
   run_id="run-$(date +%s)-${RANDOM}"
-  mkdir -p "$(orch_dir)/runs/${run_id}"
-  cat >"$(orch_dir)/runs/${run_id}/meta" <<EOF
+  mkdir -p "$(state_dir)/runs/${run_id}"
+  cat >"$(state_dir)/runs/${run_id}/meta" <<EOF
 run_id=${run_id}
 chain=${chain}
 parent=${parent}
@@ -381,12 +393,12 @@ cmd_launch() {
       none) die "launch: refusing run id 'none' (pass --run-id or omit to mint)" ;;
       *[!A-Za-z0-9._-]*) die "launch: invalid run id" ;;
     esac
-    [[ -d "$(orch_dir)/runs/${run_id}" ]] || die "launch: unknown run-id $run_id"
+    [[ -d "$(state_dir)/runs/${run_id}" ]] || die "launch: unknown run-id $run_id"
   fi
 
   ensure_dirs
   local stored_prompt bytes
-  stored_prompt="$(orch_dir)/prompts/${task_id}.${attempt}.txt"
+  stored_prompt="$(state_dir)/prompts/${task_id}.${attempt}.txt"
   cp "$prompt_file" "$stored_prompt"
   bytes="$(wc -c < "$stored_prompt" | tr -d ' ')"
 
@@ -398,8 +410,8 @@ cmd_launch() {
   fi
 
   local bin log_out log_err pid
-  log_out="$(orch_dir)/logs/${task_id}.${attempt}.stdout"
-  log_err="$(orch_dir)/logs/${task_id}.${attempt}.stderr"
+  log_out="$(state_dir)/logs/${task_id}.${attempt}.stdout"
+  log_err="$(state_dir)/logs/${task_id}.${attempt}.stderr"
 
   # Real claude/codex reject --prompt-file. Feed the stored prompt on stdin.
   # Never interpolate packet bytes into argv. Helper --prompt-file stays a host flag.
@@ -442,9 +454,9 @@ cmd_launch() {
   pid=$!
   local start_token
   start_token="start-${pid}-$(date +%s)-${RANDOM}"
-  mkdir -p "$(orch_dir)/runs/${run_id}"
-  printf '%s\n' "$pid" >"$(orch_dir)/runs/${run_id}/pid"
-  printf '%s\n' "$start_token" >"$(orch_dir)/runs/${run_id}/start_token"
+  mkdir -p "$(state_dir)/runs/${run_id}"
+  printf '%s\n' "$pid" >"$(state_dir)/runs/${run_id}/pid"
+  printf '%s\n' "$start_token" >"$(state_dir)/runs/${run_id}/start_token"
 
   journal_append "{\"ts\":\"$(now_iso)\",\"event\":\"launch\",\"run_id\":\"$(json_escape "$run_id")\",\"task_id\":\"$(json_escape "$task_id")\",\"attempt\":${attempt},\"agent\":\"$(json_escape "$agent")\",\"mode\":\"$(json_escape "$mode")\",\"pid\":${pid},\"start_token\":\"$(json_escape "$start_token")\",\"prompt_bytes\":${bytes},\"cwd\":\"$(json_escape "$cwd")\"}"
   printf '%s\n' "$pid"
@@ -506,7 +518,7 @@ usage_add() {
 usage_rewrite_rollup() {
   local run_id="$1" task_id="$2" attempt="$3"
   local dir sfile wfile out
-  dir="$(orch_dir)/runs/${run_id}"
+  dir="$(state_dir)/runs/${run_id}"
   sfile="${dir}/party-senpai.env"
   wfile="${dir}/party-worker.env"
   [[ -f "$sfile" ]] || usage_write_party_file "$sfile"
@@ -555,14 +567,14 @@ cmd_usage_record() {
     *) die "usage-record: --party must be senpai|worker" ;;
   esac
   ensure_dirs
-  mkdir -p "$(orch_dir)/runs/${run_id}"
-  usage_write_party_file "$(orch_dir)/runs/${run_id}/party-${party}.env" \
+  mkdir -p "$(state_dir)/runs/${run_id}"
+  usage_write_party_file "$(state_dir)/runs/${run_id}/party-${party}.env" \
     --uncached-input "$uncached_input" --cache-read "$cache_read" \
     --cache-write "$cache_write" --reasoning "$reasoning" \
     --output "$output" --cost "$cost"
   local line
   line="{\"ts\":\"$(now_iso)\",\"event\":\"usage\",\"run_id\":\"$(json_escape "$run_id")\",\"task_id\":\"$(json_escape "$task_id")\",\"attempt\":$(num_or_zero "$attempt"),\"party\":\"${party}\",\"uncached_input\":$(num_or_zero "$uncached_input"),\"cache_read\":$(num_or_zero "$cache_read"),\"cache_write\":$(num_or_zero "$cache_write"),\"reasoning\":$(num_or_zero "$reasoning"),\"output\":$(num_or_zero "$output"),\"cost\":$(num_or_zero "$cost")}"
-  printf '%s\n' "$line" >>"$(orch_dir)/ledger.jsonl"
+  printf '%s\n' "$line" >>"$(state_dir)/ledger.jsonl"
   journal_append "$line"
   usage_rewrite_rollup "$run_id" "$task_id" "$attempt" >/dev/null
 }
@@ -577,13 +589,13 @@ cmd_usage_show() {
   done
   ensure_dirs
   if [[ -n "$run_id" ]]; then
-    [[ -f "$(orch_dir)/runs/${run_id}/usage.json" ]] || die "usage-show: no usage for $run_id"
-    cat "$(orch_dir)/runs/${run_id}/usage.json"
+    [[ -f "$(state_dir)/runs/${run_id}/usage.json" ]] || die "usage-show: no usage for $run_id"
+    cat "$(state_dir)/runs/${run_id}/usage.json"
     echo
     return 0
   fi
-  [[ -f "$(orch_dir)/ledger.jsonl" ]] || die "usage-show: ledger empty"
-  cat "$(orch_dir)/ledger.jsonl"
+  [[ -f "$(state_dir)/ledger.jsonl" ]] || die "usage-show: ledger empty"
+  cat "$(state_dir)/ledger.jsonl"
 }
 
 file_has_usage_payload() {
@@ -725,13 +737,13 @@ cmd_collect() {
   fi
 
   local dest
-  dest="$(orch_dir)/results/${task_id}.${attempt}.json"
+  dest="$(state_dir)/results/${task_id}.${attempt}.json"
   if [[ -e "$dest" ]]; then
     die "collect: result already published for ${task_id}.${attempt}; mint a new attempt"
   fi
   # atomic publish
   local tmp
-  tmp="$(mktemp "$(orch_dir)/results/.tmp.XXXXXX")"
+  tmp="$(mktemp "$(state_dir)/results/.tmp.XXXXXX")"
   cp "$from" "$tmp"
   mv "$tmp" "$dest"
   journal_append "{\"ts\":\"$(now_iso)\",\"event\":\"collect\",\"task_id\":\"$(json_escape "$task_id")\",\"attempt\":${attempt},\"path\":\"$(json_escape "$dest")\"}"
@@ -867,8 +879,8 @@ cmd_import() {
     pid="$(printf '%s' "$pid" | sed 's/^ *//;s/ *$//')"
     status="$(printf '%s' "$status" | sed 's/^ *//;s/ *$//')"
     [[ -n "$task" && "$task" != "Task ID" && "$task" != "---------" ]] || continue
-    mkdir -p "$(orch_dir)/runs/legacy-${task}"
-    cat >"$(orch_dir)/runs/legacy-${task}/meta" <<EOF
+    mkdir -p "$(state_dir)/runs/legacy-${task}"
+    cat >"$(state_dir)/runs/legacy-${task}/meta" <<EOF
 run_id=legacy-${task}
 chain=${task}
 parent=
@@ -886,7 +898,7 @@ status=${status}
 EOF
     journal_append "{\"ts\":\"$(now_iso)\",\"event\":\"import\",\"task_id\":\"$(json_escape "$task")\",\"legacy\":true,\"resumable\":false,\"agent\":\"$(json_escape "$agent")\",\"role\":\"$(json_escape "$role")\"}"
   done <"$src"
-  printf 'journal\n' >"$(orch_dir)/sot"
+  printf 'journal\n' >"$(state_dir)/sot"
   journal_append "{\"ts\":\"$(now_iso)\",\"event\":\"sot\",\"value\":\"journal\"}"
   echo "imported; source of truth is journal; backup $dest_bak"
 }
@@ -950,8 +962,8 @@ cmd_render() {
     echo
     echo "<!-- generated by senpai.sh render; do not edit -->"
     echo
-    if [[ -f "$(orch_dir)/sot" ]]; then
-      echo "Source of truth: \`$(cat "$(orch_dir)/sot")\`"
+    if [[ -f "$(state_dir)/sot" ]]; then
+      echo "Source of truth: \`$(cat "$(state_dir)/sot")\`"
     else
       echo "Source of truth: \`state.md\` (journal is shadow evidence until \`senpai.sh import\`)."
     fi
@@ -959,7 +971,7 @@ cmd_render() {
     echo "| run_id | chain | role | depth | legacy | resumable |"
     echo "|--------|-------|------|-------|--------|-----------|"
     local d rid chain role depth legacy resumable
-    for d in "$(orch_dir)"/runs/*/meta; do
+    for d in "$(state_dir)"/runs/*/meta; do
       [[ -f "$d" ]] || continue
       rid="$(awk -F= '/^run_id=/{print $2}' "$d")"
       chain="$(awk -F= '/^chain=/{print $2}' "$d")"
@@ -970,15 +982,15 @@ cmd_render() {
       echo "| ${rid} | ${chain} | ${role} | ${depth:-0} | ${legacy:-0} | ${resumable:-1} |"
     done
     echo
-    if [[ -f "$(orch_dir)/journal.jsonl" ]]; then
+    if [[ -f "$(state_dir)/journal.jsonl" ]]; then
       echo "## Journal tail"
       echo
       echo '```'
-      tail -n 20 "$(orch_dir)/journal.jsonl"
+      tail -n 20 "$(state_dir)/journal.jsonl"
       echo '```'
     fi
   } >"$out"
-  if [[ -f "$(orch_dir)/sot" && "$(cat "$(orch_dir)/sot")" == "journal" ]]; then
+  if [[ -f "$(state_dir)/sot" && "$(cat "$(state_dir)/sot")" == "journal" ]]; then
     cp "$out" "$(orch_dir)/state.md"
   fi
   printf '%s\n' "$out"
