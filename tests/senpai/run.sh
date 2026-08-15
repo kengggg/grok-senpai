@@ -153,9 +153,28 @@ git -C "$PROJ" worktree add -q -b orch/t-impl "$WT"
 ARGV="$WORKDIR/argv.nul"
 export SENPAI_ARGV_OUT="$ARGV"
 
+RUN_INJ="$("$SENPAI" mint --chain c1 --mode implementation)"
 PID="$("$SENPAI" launch --agent claude --mode implementation --task-id t-inj --chain c1 \
-  --prompt-file "$PROMPT" --cwd "$WT")"
+  --prompt-file "$PROMPT" --cwd "$WT" --run-id "$RUN_INJ")"
 assert "launch: recorded pid is numeric" test -n "$PID"
+assert "launch: pid stored under minted run" test -f "$PROJ/.grok/orchestration/runs/${RUN_INJ}/pid"
+assert "launch: with --run-id does not create runs/none" test ! -e "$PROJ/.grok/orchestration/runs/none"
+
+# omit --run-id: helper must mint, never dump into runs/none
+PID_MINT="$("$SENPAI" launch --agent claude --mode implementation --task-id t-norun --chain c-norun \
+  --prompt-file "$PROMPT" --cwd "$WT")"
+assert "launch: omit --run-id still returns pid" test -n "$PID_MINT"
+assert "launch: omit --run-id does not create runs/none" test ! -e "$PROJ/.grok/orchestration/runs/none"
+assert "launch: omit --run-id minted a run dir" \
+  test "$(find "$PROJ/.grok/orchestration/runs" -mindepth 2 -name pid | wc -l)" -ge 2
+if "$SENPAI" launch --agent claude --mode implementation --task-id t-none --chain c-none \
+    --prompt-file "$PROMPT" --cwd "$WT" --run-id none >/dev/null 2>&1; then
+  echo "FAIL  launch accepted --run-id none" >&2
+  FAIL=$((FAIL + 1))
+else
+  echo "PASS  launch: --run-id none refused"
+  PASS=$((PASS + 1))
+fi
 
 python3 - "$ARGV" "$PROJ" "$PROMPT" <<'PY'
 import sys, os
@@ -279,10 +298,69 @@ else
   PASS=$((PASS + 1))
 fi
 
+# v1 must match task_id (not just sniff { / task_id / status)
+V1OK="$WORKDIR/v1-ok.json"
+echo '{"task_id":"t-v1","status":"success"}' >"$V1OK"
+DESTV1="$("$SENPAI" collect --task-id t-v1 --attempt 1 --from "$V1OK")"
+assert "collect: v1 matching task_id published" test -f "$DESTV1"
+V1BAD="$WORKDIR/v1-bad.json"
+echo '{"task_id":"other-v1","status":"success"}' >"$V1BAD"
+if "$SENPAI" collect --task-id t-v1b --attempt 1 --from "$V1BAD" >/dev/null 2>&1; then
+  echo "FAIL  collect accepted v1 with mismatched task_id" >&2
+  FAIL=$((FAIL + 1))
+else
+  echo "PASS  collect: v1 task_id mismatch refused"
+  PASS=$((PASS + 1))
+fi
+V1GARB="$WORKDIR/v1-garb.json"
+printf 'prologue mentions "task_id" and "status" {\n' >"$V1GARB"
+if "$SENPAI" collect --task-id t-v1g --attempt 1 --from "$V1GARB" >/dev/null 2>&1; then
+  echo "FAIL  collect accepted v1 garbage" >&2
+  FAIL=$((FAIL + 1))
+else
+  echo "PASS  collect: v1 garbage refused"
+  PASS=$((PASS + 1))
+fi
+
+# usage without python3 must not silently become $0
+NOPY="$WORKDIR/nopy-bin"
+mkdir -p "$NOPY"
+for _c in bash sh date mkdir printf cat awk sed kill stat cksum wc tr git mktemp cp mv rm grep tail env uname dirname basename head sleep; do
+  _src="$(command -v "$_c" 2>/dev/null || true)"
+  if [[ -n "$_src" && ! -e "$NOPY/$_c" ]]; then
+    ln -s "$_src" "$NOPY/$_c"
+  fi
+done
+assert "usage: nopy PATH hides python3" test -z "$(PATH="$NOPY" command -v python3 || true)"
+RESNP="$WORKDIR/res-nopy.json"
+echo '{"task_id":"t-nopy","status":"success"}' >"$RESNP"
+PATH="$NOPY" "$SENPAI" collect --task-id t-nopy --attempt 1 --from "$RESNP" >/dev/null
+assert "usage: collect without usage works without python3" test $? -eq 0
+RESUP="$WORKDIR/res-nopy-use.json"
+echo '{"task_id":"t-nopyu","status":"success","usage":{"worker":{"uncached_input":9,"cost":1.5}}}' >"$RESUP"
+if PATH="$NOPY" "$SENPAI" collect --task-id t-nopyu --attempt 1 --from "$RESUP" >/dev/null 2>"$WORKDIR/nopy.err"; then
+  echo "FAIL  collect recorded usage without python3" >&2
+  FAIL=$((FAIL + 1))
+else
+  echo "PASS  usage: python3 missing + usage payload fails closed"
+  PASS=$((PASS + 1))
+fi
+assert "usage: no python does not write \$0 rollup" \
+  test ! -f "$PROJ/.grok/orchestration/runs/task-t-nopyu/usage.json"
+assert "usage: no python error names the missing interpreter" \
+  grep -q 'python3 is missing' "$WORKDIR/nopy.err"
+
 # snapshot + approve
 read -r BASE TREE < <(SENPAI_CONTROL_ROOT="$PROJ" "$SENPAI" snapshot --cwd "$PROJ")
 assert "snapshot: tree oid" test -n "$TREE"
 "$SENPAI" approve --base "$BASE" --tree "$TREE" --cwd "$PROJ" >/dev/null
+if "$SENPAI" approve --base "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" --tree "$TREE" --cwd "$PROJ" >/dev/null 2>&1; then
+  echo "FAIL  approve accepted mismatched --base" >&2
+  FAIL=$((FAIL + 1))
+else
+  echo "PASS  approve: --base mismatch refused"
+  PASS=$((PASS + 1))
+fi
 echo dirty >>"$PROJ/README"
 if "$SENPAI" approve --base "$BASE" --tree "$TREE" --cwd "$PROJ" >/dev/null 2>&1; then
   echo "FAIL  approve after mutate" >&2
@@ -311,6 +389,24 @@ sleep 2
 "$SENPAI" lock --chain lock-a >/dev/null
 assert "lock: steal after dead pid + TTL" test $? -eq 0
 
+# PID reuse: this shell is alive, but recorded starttime is not ours
+"$SENPAI" lock --chain lock-reuse >/dev/null
+LOCKR="$PROJ/.grok/orchestration/locks/lock-reuse"
+echo $$ >"$LOCKR/pid"
+echo old-token-reuse >"$LOCKR/start_token"
+echo NOT-THE-STARTTIME >"$LOCKR/pid_start"
+"$SENPAI" lock --chain lock-reuse >/dev/null
+assert "lock: steal on PID reuse (start_token read)" test $? -eq 0
+assert "lock: start_token replaced after reuse steal" \
+  test "$(cat "$LOCKR/start_token")" != "old-token-reuse"
+if sed -n '/^cmd_lock()/,/^cmd_mint()/p' "$SENPAI" | grep -q 'rm -rf "$d"'; then
+  echo "FAIL  lock steal still rm -rf the lock dir" >&2
+  FAIL=$((FAIL + 1))
+else
+  echo "PASS  lock: steal is rename-based (no rm -rf lock dir)"
+  PASS=$((PASS + 1))
+fi
+
 # mint + no-delegate child
 RUN="$("$SENPAI" mint --chain ch-m --mode implementation)"
 assert "mint: run id" test -n "$RUN"
@@ -323,6 +419,22 @@ if "$SENPAI" mint --chain ch-m --parent "$CHILD" --mode implementation >/dev/nul
   FAIL=$((FAIL + 1))
 else
   echo "PASS  mint: runner cannot mint grandchild"
+  PASS=$((PASS + 1))
+fi
+# launch must not treat may_delegate as a no-op gate (deleted, not fail-closed here)
+if "$SENPAI" launch --agent claude --mode implementation --task-id t-md --chain ch-m \
+    --prompt-file "$PROMPT" --cwd "$WT" --run-id "$CHILD" >/dev/null 2>&1; then
+  echo "PASS  launch: may_delegate=0 run still launches"
+  PASS=$((PASS + 1))
+else
+  echo "FAIL  launch refused may_delegate=0 run_id" >&2
+  FAIL=$((FAIL + 1))
+fi
+if sed -n '/^cmd_launch()/,/^# --- collect/p' "$SENPAI" | grep -q may_delegate; then
+  echo "FAIL  launch still contains may_delegate no-op" >&2
+  FAIL=$((FAIL + 1))
+else
+  echo "PASS  launch: may_delegate no-op removed"
   PASS=$((PASS + 1))
 fi
 

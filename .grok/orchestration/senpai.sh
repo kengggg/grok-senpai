@@ -132,6 +132,43 @@ pid_alive() {
   kill -0 "$pid" 2>/dev/null
 }
 
+# Starttime distinguishes a recorded holder from a later process that reused the PID.
+pid_starttime() {
+  local pid="$1"
+  [[ -n "$pid" ]] || return 1
+  if [[ -r "/proc/${pid}/stat" ]]; then
+    awk '{
+      line = $0
+      sub(/.*\) /, "", line)
+      n = split(line, a, / /)
+      print a[20]
+    }' "/proc/${pid}/stat"
+    return 0
+  fi
+  return 1
+}
+
+pid_is_holder() {
+  local pid="$1" recorded="${2:-}"
+  pid_alive "$pid" || return 1
+  if [[ -n "$recorded" ]]; then
+    local cur
+    cur="$(pid_starttime "$pid" 2>/dev/null || true)"
+    [[ -n "$cur" && "$cur" == "$recorded" ]]
+    return
+  fi
+  return 0
+}
+
+write_lock_files() {
+  local d="$1" token="$2"
+  local st=""
+  st="$(pid_starttime "$$" 2>/dev/null || true)"
+  printf '%s\n' "$$" >"$d/pid"
+  printf '%s\n' "$token" >"$d/start_token"
+  printf '%s\n' "$st" >"$d/pid_start"
+}
+
 lock_age() {
   local d="$1" now m
   now="$(date +%s)"
@@ -161,39 +198,59 @@ cmd_lock() {
   token="tok-${RANDOM}-$$-$(date +%s)"
 
   if mkdir "$d" 2>/dev/null; then
-    printf '%s\n' "$$" >"$d/pid"
-    printf '%s\n' "$token" >"$d/start_token"
+    write_lock_files "$d" "$token"
     journal_append "{\"ts\":\"$(now_iso)\",\"event\":\"lock\",\"chain\":\"$(json_escape "$chain")\",\"pid\":$$,\"start_token\":\"$(json_escape "$token")\",\"action\":\"acquire\"}"
     printf '%s\n' "$token"
     return 0
   fi
 
-  local old_pid old_token age
+  local old_pid old_token old_start age cur_start reused=0
   old_pid="$(cat "$d/pid" 2>/dev/null || true)"
   old_token="$(cat "$d/start_token" 2>/dev/null || true)"
+  old_start="$(cat "$d/pid_start" 2>/dev/null || true)"
   age="$(lock_age "$d")"
 
-  steal=0
-  if pid_alive "$old_pid"; then
-    if [[ "$age" -gt "$LOCK_TTL" ]]; then
-      # live PID past TTL still owns unless we treat reused PID; refuse
-      die "lock: chain $chain held by live pid $old_pid"
-    else
-      die "lock: chain $chain held by live pid $old_pid"
-    fi
-  else
-    if [[ "$age" -gt "$LOCK_TTL" ]]; then
-      steal=1
-    else
-      die "lock: chain $chain stale but TTL ${LOCK_TTL}s not elapsed (age=${age}s)"
+  if pid_is_holder "$old_pid" "$old_start"; then
+    die "lock: chain $chain held by live pid $old_pid"
+  fi
+
+  # Alive PID whose starttime does not match the recorded holder is reuse, not ownership.
+  if pid_alive "$old_pid" && [[ -n "$old_start" ]]; then
+    cur_start="$(pid_starttime "$old_pid" 2>/dev/null || true)"
+    if [[ -n "$cur_start" && "$cur_start" != "$old_start" ]]; then
+      reused=1
     fi
   fi
 
+  steal=0
+  if [[ "$reused" -eq 1 ]]; then
+    steal=1
+  elif [[ "$age" -gt "$LOCK_TTL" ]]; then
+    steal=1
+  else
+    die "lock: chain $chain stale but TTL ${LOCK_TTL}s not elapsed (age=${age}s)"
+  fi
+
   if [[ "$steal" -eq 1 ]]; then
-    rm -rf "$d"
-    mkdir "$d" || die "lock: steal lost the race"
-    printf '%s\n' "$$" >"$d/pid"
-    printf '%s\n' "$token" >"$d/start_token"
+    # Compare-and-swap on start_token, then rename the old dir aside (no rm -rf + mkdir).
+    local cur_token claim stale
+    cur_token="$(cat "$d/start_token" 2>/dev/null || true)"
+    [[ "$cur_token" == "$old_token" ]] || die "lock: steal lost the race (start_token changed)"
+    claim="$(lock_dir_for ".${chain}.claim.$$")"
+    stale="$(lock_dir_for ".${chain}.stale.$$")"
+    rm -rf "$claim"
+    mkdir "$claim" || die "lock: steal claim failed"
+    write_lock_files "$claim" "$token"
+    if ! mv "$d" "$stale" 2>/dev/null; then
+      rm -rf "$claim"
+      die "lock: steal lost the race"
+    fi
+    if ! mv "$claim" "$d" 2>/dev/null; then
+      mv "$stale" "$d" 2>/dev/null || true
+      rm -rf "$claim"
+      die "lock: steal lost the race"
+    fi
+    rm -rf "$stale"
     journal_append "{\"ts\":\"$(now_iso)\",\"event\":\"lock\",\"chain\":\"$(json_escape "$chain")\",\"pid\":$$,\"start_token\":\"$(json_escape "$token")\",\"action\":\"steal\",\"prev_pid\":\"$(json_escape "$old_pid")\"}"
     printf '%s\n' "$token"
     return 0
@@ -314,15 +371,14 @@ cmd_launch() {
     fi
   fi
 
-  if [[ -n "$run_id" ]]; then
-    local pmeta may
-    pmeta="$(orch_dir)/runs/${run_id}/meta"
-    if [[ -f "$pmeta" ]]; then
-      may="$(awk -F= '/^may_delegate=/{print $2}' "$pmeta")"
-      if [[ "$mode" == "independent_review" && "$may" == "1" ]]; then
-        : # host-minted review run is ok
-      fi
-    fi
+  if [[ -z "$run_id" ]]; then
+    run_id="$(cmd_mint --chain "$chain" --mode "$mode")"
+  else
+    case "$run_id" in
+      none) die "launch: refusing run id 'none' (pass --run-id or omit to mint)" ;;
+      *[!A-Za-z0-9._-]*) die "launch: invalid run id" ;;
+    esac
+    [[ -d "$(orch_dir)/runs/${run_id}" ]] || die "launch: unknown run-id $run_id"
   fi
 
   ensure_dirs
@@ -382,11 +438,11 @@ cmd_launch() {
   pid=$!
   local start_token
   start_token="start-${pid}-$(date +%s)-${RANDOM}"
-  mkdir -p "$(orch_dir)/runs/${run_id:-none}"
-  printf '%s\n' "$pid" >"$(orch_dir)/runs/${run_id:-none}/pid"
-  printf '%s\n' "$start_token" >"$(orch_dir)/runs/${run_id:-none}/start_token"
+  mkdir -p "$(orch_dir)/runs/${run_id}"
+  printf '%s\n' "$pid" >"$(orch_dir)/runs/${run_id}/pid"
+  printf '%s\n' "$start_token" >"$(orch_dir)/runs/${run_id}/start_token"
 
-  journal_append "{\"ts\":\"$(now_iso)\",\"event\":\"launch\",\"task_id\":\"$(json_escape "$task_id")\",\"attempt\":${attempt},\"agent\":\"$(json_escape "$agent")\",\"mode\":\"$(json_escape "$mode")\",\"pid\":${pid},\"start_token\":\"$(json_escape "$start_token")\",\"prompt_bytes\":${bytes},\"cwd\":\"$(json_escape "$cwd")\"}"
+  journal_append "{\"ts\":\"$(now_iso)\",\"event\":\"launch\",\"run_id\":\"$(json_escape "$run_id")\",\"task_id\":\"$(json_escape "$task_id")\",\"attempt\":${attempt},\"agent\":\"$(json_escape "$agent")\",\"mode\":\"$(json_escape "$mode")\",\"pid\":${pid},\"start_token\":\"$(json_escape "$start_token")\",\"prompt_bytes\":${bytes},\"cwd\":\"$(json_escape "$cwd")\"}"
   printf '%s\n' "$pid"
 }
 
@@ -526,10 +582,26 @@ cmd_usage_show() {
   cat "$(orch_dir)/ledger.jsonl"
 }
 
+file_has_usage_payload() {
+  local f="$1"
+  [[ -f "$f" ]] || return 1
+  grep -qE '"usage"[[:space:]]*:|"uncached_input"[[:space:]]*:|"cost"[[:space:]]*:' "$f"
+}
+
+require_python_for_usage() {
+  command -v python3 >/dev/null 2>&1 \
+    || die "collect: usage present but python3 is missing; refusing to record \$0"
+}
+
 extract_usage_party() {
   # stdin unused; args: result.json party outfile
   local src="$1" party="$2" dest="$3"
-  command -v python3 >/dev/null 2>&1 || return 1
+  if ! command -v python3 >/dev/null 2>&1; then
+    if file_has_usage_payload "$src"; then
+      die "collect: usage present but python3 is missing; refusing to record \$0"
+    fi
+    return 1
+  fi
   python3 - "$src" "$party" "$dest" <<'PY'
 import json, sys
 src, party, dest = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -581,20 +653,24 @@ cmd_collect() {
   [[ -f "$from" ]] || die "collect: source missing"
   ensure_dirs
 
-  # framing only — no semantic schema parser
+  # framing only — no semantic schema parser. v1 and v2 both match task_id.
   grep -q '{' "$from" || die "collect: not JSON-shaped"
   grep -q '"task_id"' "$from" || die "collect: missing task_id"
   grep -q '"status"' "$from" || die "collect: missing status"
+  if ! grep -Eq '"task_id"[[:space:]]*:[[:space:]]*"'"$task_id"'"' "$from"; then
+    die "collect: task_id mismatch"
+  fi
   if grep -q '"protocol_version"' "$from"; then
-    # explicit v2: require attempt field to match
-    grep -q '"protocol_version"' "$from" || true
-    if ! grep -Eq '"task_id"[[:space:]]*:[[:space:]]*"'"$task_id"'"' "$from"; then
-      die "collect: task_id mismatch (malformed v2)"
-    fi
     if grep -q '"attempt"' "$from"; then
       grep -Eq '"attempt"[[:space:]]*:[[:space:]]*'"${attempt}"'([^0-9]|$)' "$from" \
         || die "collect: attempt mismatch (malformed v2)"
     fi
+  fi
+
+  if file_has_usage_payload "$from" \
+    || { [[ -n "$usage_path" ]] && file_has_usage_payload "$usage_path"; } \
+    || { [[ -n "$senpai_usage" ]] && file_has_usage_payload "$senpai_usage"; }; then
+    require_python_for_usage
   fi
 
   local dest
@@ -710,7 +786,10 @@ cmd_approve() {
   # recompute
   local got_base got_tree
   read -r got_base got_tree < <(cmd_snapshot --cwd "$cwd" | tail -n 1)
-  # cmd_snapshot also journals; compare
+  # cmd_snapshot also journals; compare both halves of Gate 6
+  if [[ "$got_base" != "$base" ]]; then
+    die "approve: base mismatch (recorded ${base}, current ${got_base})"
+  fi
   if [[ "$got_tree" != "$tree" ]]; then
     die "approve: tree mismatch (recorded ${tree}, current ${got_tree})"
   fi
@@ -800,8 +879,10 @@ cmd_cleanup() {
   d="$(lock_dir_for "$chain")"
   [[ -d "$d" ]] || { echo "no lock"; return 0; }
   local pid
+  local start
   pid="$(cat "$d/pid" 2>/dev/null || true)"
-  if pid_alive "$pid"; then
+  start="$(cat "$d/pid_start" 2>/dev/null || true)"
+  if pid_is_holder "$pid" "$start"; then
     die "cleanup: pid $pid still live"
   fi
   rm -rf "$d"
