@@ -2,7 +2,7 @@
 
 **grok-senpai** is a reusable multi-agent orchestration template.
 
-**Senpai** is a *session role* (the session that holds the task-chain lease and the human-approval conversation), not a product or model name. Grok Build is the default and proven host. Claude Code and Codex CLI can be senpai hosts via native skills (experimental until conformance). Workers stay Claude Code and Codex CLI, launched only through `.grok/orchestration/senpai.sh`.
+**Senpai** is a *session role* (the session that holds the task-chain lease and the human-approval conversation), not a product or model name. Grok Build is the default and proven host. Claude Code and Codex CLI can be senpai hosts via native skills (experimental until a human labels a host proven). Skill *discovery* is probed in `tests/senpai/conformance.sh` when those CLIs are installed. Workers stay Claude Code and Codex CLI, launched only through `.grok/orchestration/senpai.sh`.
 
 | Role | Who | Skill |
 |------|-----|--------|
@@ -19,7 +19,7 @@ Application code lives in *your* project. This template provides the playbook, w
 ## Multi-Agent Orchestration Playbook (Grok + Claude + Codex)
 
 ### Core Principles
-- Senpai is the orchestration role of a session. Grok Build is the default/proven host; Codex and Claude hosts are experimental until conformance.
+- Senpai is the orchestration role of a session. Grok Build is the default/proven host; Codex and Claude hosts are experimental until a human labels a host proven. Discovery of installed skills is probed when those CLIs are present.
 - Always start non-trivial work in Plan Mode (Grok host addendum; other hosts plan before launching workers).
 - Prefer model diversity: Claude Code for deep reasoning / architecture; Codex CLI for scoped implementation and independent review; Grok subagents for simple independent pieces.
 - Isolation first: every parallel or non-trivial task runs in its own linked worktree (`git-dir` ≠ `git-common-dir`).

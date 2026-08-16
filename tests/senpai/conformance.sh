@@ -97,11 +97,57 @@ assert "crash-resume: steal" test $? -eq 0
 echo
 echo "## Real CLI probes (UNKNOWN — not a merge gate)"
 echo "probe: helper launch feeds the stored prompt on stdin (no runner --prompt-file)"
-echo "probe: skill files exist after install (discovery fire still UNKNOWN)"
 assert "probe: project .claude/skills/senpai present" \
   test -f "$PROJ/.claude/skills/senpai/SKILL.md"
 assert "probe: project .agents/skills/senpai present" \
   test -f "$PROJ/.agents/skills/senpai/SKILL.md"
+
+# Discovery fire: no live model session. Fail the suite only when the CLI is
+# installed and cannot see the installed skill.
+if command -v claude >/dev/null 2>&1; then
+  if claude plugin validate "$PROJ/.claude/skills" >/dev/null 2>"$WORKDIR/claude-val.err"; then
+    echo "PASS  discovery: claude plugin validate .claude/skills"
+    PASS=$((PASS+1))
+  else
+    echo "FAIL  discovery: claude plugin validate .claude/skills" >&2
+    cat "$WORKDIR/claude-val.err" >&2 || true
+    FAIL=$((FAIL+1))
+  fi
+else
+  echo "probe: claude not installed; skip plugin validate"
+fi
+
+if command -v codex >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  if python3 - "$PROJ" "$WORKDIR/codex-pi.out" "$WORKDIR/codex-pi.err" <<'PY'
+import subprocess, sys, pathlib
+proj, outp, errp = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    p = subprocess.run(
+        ["codex", "debug", "prompt-input", "x"],
+        cwd=proj, capture_output=True, text=True, timeout=45,
+    )
+except subprocess.TimeoutExpired:
+    pathlib.Path(errp).write_text("timeout\n")
+    sys.exit(2)
+pathlib.Path(outp).write_text(p.stdout)
+pathlib.Path(errp).write_text(p.stderr)
+needle = str(pathlib.Path(proj, ".agents/skills/senpai/SKILL.md").resolve())
+# macOS may prefix /private
+blob = p.stdout + p.stderr
+ok = (".agents/skills/senpai/SKILL.md" in blob) and ("senpai:" in blob or "name: senpai" in blob or "- senpai:" in blob)
+sys.exit(0 if ok else 1)
+PY
+  then
+    echo "PASS  discovery: codex prompt-input lists .agents/skills/senpai"
+    PASS=$((PASS+1))
+  else
+    echo "FAIL  discovery: codex prompt-input did not list .agents/skills/senpai" >&2
+    tail -5 "$WORKDIR/codex-pi.err" >&2 || true
+    FAIL=$((FAIL+1))
+  fi
+else
+  echo "probe: codex/python3 missing; skip prompt-input discovery"
+fi
 
 if command -v claude >/dev/null 2>&1; then
   echo "probe: claude is on PATH ($(claude --version 2>/dev/null | head -1))"
